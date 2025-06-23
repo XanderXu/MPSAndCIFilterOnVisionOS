@@ -25,36 +25,35 @@ struct VideoWithMPSImmersiveView: View {
             
             
             do {
-                let avComposition = AVMutableComposition()
-                let duration = try await asset.load(.duration)
-                let timeRange = CMTimeRange(start: .zero, duration: duration)
-                let videoTrack = avComposition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
-                if let sourceTrack = try await asset.loadTracks(withMediaType: .video).first {
-                    try? videoTrack?.insertTimeRange(timeRange, of: sourceTrack, at: .zero)
-                }
+//                let avComposition = AVMutableComposition()
+//                let duration = try await asset.load(.duration)
+//                let timeRange = CMTimeRange(start: .zero, duration: duration)
+//                let videoTrack = avComposition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
+//                if let sourceTrack = try await asset.loadTracks(withMediaType: .video).first {
+//                    try? videoTrack?.insertTimeRange(timeRange, of: sourceTrack, at: .zero)
+//                }
+//                
+//                let videoTracks = avComposition.tracks(withMediaType: .video)
+//                
+//                guard !videoTracks.isEmpty, let videoTrack = videoTracks.first else {
+//                    fatalError("The specified asset has no video tracks.")
+//                }
+//                
+//                let assetSize = videoTrack.naturalSize
+////                let timeRange = videoTrack.timeRange
+//                
+//                var instructionLayers = [AVMutableVideoCompositionLayerInstruction]()
+//                let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: videoTrack)
+//                instructionLayers.append(layerInstruction)
+//                
+//                let compositionInstruction = AVMutableVideoCompositionInstruction()
+//                compositionInstruction.timeRange = timeRange
+//                compositionInstruction.layerInstructions = instructionLayers
                 
-                let videoTracks = avComposition.tracks(withMediaType: .video)
-                
-                guard !videoTracks.isEmpty, let videoTrack = videoTracks.first else {
-                    fatalError("The specified asset has no video tracks.")
-                }
-                
-                let assetSize = videoTrack.naturalSize
-//                let timeRange = videoTrack.timeRange
-                
-                var instructionLayers = [AVMutableVideoCompositionLayerInstruction]()
-                let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: videoTrack)
-                instructionLayers.append(layerInstruction)
-                
-                let compositionInstruction = AVMutableVideoCompositionInstruction()
-                compositionInstruction.timeRange = timeRange
-                compositionInstruction.layerInstructions = instructionLayers
-                
-                let composition = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: avComposition, prototypeInstruction: compositionInstruction)
-                
+                let composition = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: asset)
                 composition.customVideoCompositorClass = SampleCustomCompositor.self
                 
-                let playerItem = AVPlayerItem(asset: avComposition)
+                let playerItem = AVPlayerItem(asset: asset)
                 playerItem.videoComposition = composition
                 
                 let player = AVPlayer(playerItem: playerItem)

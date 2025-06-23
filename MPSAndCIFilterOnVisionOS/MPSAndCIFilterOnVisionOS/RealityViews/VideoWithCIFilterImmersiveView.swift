@@ -23,29 +23,10 @@ struct VideoWithCIFilterImmersiveView: View {
             content.add(entity)
             
             do {
-                let avComposition = AVMutableComposition()
-                let duration = try await asset.load(.duration)
-                let timeRange = CMTimeRange(start: .zero, duration: duration)
-                let videoTrack = avComposition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
-                if let sourceTrack = try await asset.loadTracks(withMediaType: .video).first {
-                    try? videoTrack?.insertTimeRange(timeRange, of: sourceTrack, at: .zero)
-                }
-                
-                
-                let playerItem = AVPlayerItem(asset: avComposition)
+                let playerItem = AVPlayerItem(asset: asset)
                 playerItem.videoComposition = nil
-                let composition = try await AVMutableVideoComposition.videoComposition(with: avComposition) { request in
-                    let source = request.sourceImage.clampedToExtent()
-                    
-                    ciFilter?.setValue(source, forKey: kCIInputImageKey)
-//                    ciFilter?.setValue(model.blurRadius, forKey: kCIInputRadiusKey)
-                    ciFilter?.setValue(100.0, forKey: kCIInputRadiusKey)
-
-                    if let output = ciFilter?.outputImage?.cropped(to: request.sourceImage.extent) {
-                        request.finish(with: output, context: nil)
-                    } else {
-                        request.finish(with: FilterError.failedToProduceOutputImage)
-                    }
+                let composition = try await AVMutableVideoComposition.videoComposition(with: asset) { request in
+                    populateCIFilter(request: request)
                 }
                 playerItem.videoComposition = composition
                 
@@ -68,6 +49,19 @@ struct VideoWithCIFilterImmersiveView: View {
         }
         
         
+    }
+    private func populateCIFilter(request: AVAsynchronousCIImageFilteringRequest) {
+        let source = request.sourceImage
+        
+        ciFilter?.setValue(source, forKey: kCIInputImageKey)
+        ciFilter?.setValue(model.blurRadius, forKey: kCIInputRadiusKey)
+//        ciFilter?.setValue(100.0, forKey: kCIInputRadiusKey)
+
+        if let output = ciFilter?.outputImage {
+            request.finish(with: output, context: nil)
+        } else {
+            request.finish(with: FilterError.failedToProduceOutputImage)
+        }
     }
 }
 

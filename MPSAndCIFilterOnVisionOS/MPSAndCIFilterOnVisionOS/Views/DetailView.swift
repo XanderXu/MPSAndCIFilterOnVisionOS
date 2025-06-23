@@ -20,7 +20,7 @@ struct DetailView: View {
                 
             }
             Text("Blur Radius: \(model.blurRadius.formatted())")
-            Slider(value: $model.blurRadius, in: 1...20, step: 1) {
+            Slider(value: $model.blurRadius, in: 1...50, step: 5) {
                 Text("Blur Radius: \(model.blurRadius)")
             }
             .frame(width: 400)

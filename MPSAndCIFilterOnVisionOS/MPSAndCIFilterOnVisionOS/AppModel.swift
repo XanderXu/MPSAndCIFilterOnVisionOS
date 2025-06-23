@@ -13,7 +13,7 @@ import RealityKit
 class AppModel {
     var rootEntity: Entity?
     var turnOnImmersiveSpace = false
-    var blurRadius: Float = 8
+    var blurRadius: Float = 10
     var inTexture: MTLTexture?
     var lowLevelTexture: LowLevelTexture?
     

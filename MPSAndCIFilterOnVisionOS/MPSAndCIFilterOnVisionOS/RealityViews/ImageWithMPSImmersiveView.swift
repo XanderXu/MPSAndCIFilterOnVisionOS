@@ -12,7 +12,7 @@ import MetalKit
 
 struct ImageWithMPSImmersiveView: View {
     @Environment(AppModel.self) private var model
-    let device = MTLCreateSystemDefaultDevice()!
+    let mtlDevice = MTLCreateSystemDefaultDevice()!
     var body: some View {
         RealityView { content in
             
@@ -22,7 +22,7 @@ struct ImageWithMPSImmersiveView: View {
             content.add(entity)
             
             do {
-                let textureLoader = MTKTextureLoader(device: device)
+                let textureLoader = MTKTextureLoader(device: mtlDevice)
                 let inTexture = try textureLoader.newTexture(name: "Shop_L", scaleFactor: 1, bundle: nil)
                 
                 // Create a descriptor for the LowLevelTexture.
@@ -30,7 +30,7 @@ struct ImageWithMPSImmersiveView: View {
                 // Create the LowLevelTexture and populate it on the GPU.
                 let llt = try LowLevelTexture(descriptor: textureDescriptor)
                 
-                populateMPS(inTexture: inTexture, lowLevelTexture: llt, device: device)
+                populateMPS(inTexture: inTexture, lowLevelTexture: llt, device: mtlDevice)
 
                 // Create a TextureResource from the LowLevelTexture.
                 let resource = try TextureResource(from: llt)
@@ -54,7 +54,7 @@ struct ImageWithMPSImmersiveView: View {
             guard model.inTexture != nil && model.lowLevelTexture != nil else {
                 return
             }
-            populateMPS(inTexture: model.inTexture!, lowLevelTexture: model.lowLevelTexture!, device: device)
+            populateMPS(inTexture: model.inTexture!, lowLevelTexture: model.lowLevelTexture!, device: mtlDevice)
         }
         
         

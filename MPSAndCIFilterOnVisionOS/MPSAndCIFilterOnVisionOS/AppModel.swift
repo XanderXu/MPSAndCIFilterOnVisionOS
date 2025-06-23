@@ -7,6 +7,7 @@
 
 import SwiftUI
 import RealityKit
+import AVFoundation
 /// Maintains app-wide state
 @MainActor
 @Observable
@@ -16,6 +17,7 @@ class AppModel {
     var blurRadius: Float = 10
     var inTexture: MTLTexture?
     var lowLevelTexture: LowLevelTexture?
+    var player: AVPlayer?
     
     func clear() {
         rootEntity?.children.removeAll()
@@ -27,7 +29,7 @@ class AppModel {
     func reset() {
         debugPrint(#function)
         
-        blurRadius = 8
+        blurRadius = 10
         clear()
     }
 }

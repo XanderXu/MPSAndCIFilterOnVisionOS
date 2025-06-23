@@ -24,7 +24,6 @@ struct VideoWithCIFilterImmersiveView: View {
             
             do {
                 let playerItem = AVPlayerItem(asset: asset)
-                playerItem.videoComposition = nil
                 let composition = try await AVMutableVideoComposition.videoComposition(with: asset) { request in
                     populateCIFilter(request: request)
                 }
@@ -42,12 +41,6 @@ struct VideoWithCIFilterImmersiveView: View {
             }
             
         }
-        .onChange(of: model.blurRadius) { oldValue, newValue in
-            guard model.inTexture != nil && model.lowLevelTexture != nil else {
-                return
-            }
-        }
-        
         
     }
     private func populateCIFilter(request: AVAsynchronousCIImageFilteringRequest) {

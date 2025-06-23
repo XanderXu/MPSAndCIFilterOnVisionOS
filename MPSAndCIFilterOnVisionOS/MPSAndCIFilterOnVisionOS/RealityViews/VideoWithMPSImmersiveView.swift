@@ -14,7 +14,7 @@ import AVFoundation
 struct VideoWithMPSImmersiveView: View {
     @Environment(AppModel.self) private var model
     let asset = AVURLAsset(url: Bundle.main.url(forResource: "HDRMovie", withExtension: "mov")!)
-    
+    let mtlDevice = MTLCreateSystemDefaultDevice()!
     var body: some View {
         RealityView { content in
             
@@ -25,30 +25,14 @@ struct VideoWithMPSImmersiveView: View {
             
             
             do {
-//                let avComposition = AVMutableComposition()
-//                let duration = try await asset.load(.duration)
-//                let timeRange = CMTimeRange(start: .zero, duration: duration)
-//                let videoTrack = avComposition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
-//                if let sourceTrack = try await asset.loadTracks(withMediaType: .video).first {
-//                    try? videoTrack?.insertTimeRange(timeRange, of: sourceTrack, at: .zero)
-//                }
-//                
-//                let videoTracks = avComposition.tracks(withMediaType: .video)
-//                
-//                guard !videoTracks.isEmpty, let videoTrack = videoTracks.first else {
-//                    fatalError("The specified asset has no video tracks.")
-//                }
-//                
-//                let assetSize = videoTrack.naturalSize
-////                let timeRange = videoTrack.timeRange
-//                
-//                var instructionLayers = [AVMutableVideoCompositionLayerInstruction]()
-//                let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: videoTrack)
-//                instructionLayers.append(layerInstruction)
-//                
-//                let compositionInstruction = AVMutableVideoCompositionInstruction()
-//                compositionInstruction.timeRange = timeRange
-//                compositionInstruction.layerInstructions = instructionLayers
+                
+                // Create a descriptor for the LowLevelTexture.
+                let textureDescriptor = createTextureDescriptor(width: 3840, height: 2160)
+                // Create the LowLevelTexture and populate it on the GPU.
+                let llt = try LowLevelTexture(descriptor: textureDescriptor)
+                model.lowLevelTexture = llt
+                SampleCustomCompositor.mtlDevice = mtlDevice
+                SampleCustomCompositor.llt = llt
                 
                 let composition = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: asset)
                 composition.customVideoCompositorClass = SampleCustomCompositor.self
@@ -62,6 +46,20 @@ struct VideoWithMPSImmersiveView: View {
                 entity.addChild(modelEntity)
                 modelEntity.position = SIMD3(x: 0, y: 1, z: -2)
                 player.play()
+                model.player = player
+                
+                
+                // Create a TextureResource from the LowLevelTexture.
+                let resource = try await TextureResource(from: llt)
+                // Create a material that uses the texture.
+                var material = UnlitMaterial(texture: resource)
+//                material.opacityThreshold = 0.5
+
+                // Return an entity of a plane which uses the generated texture.
+                let modelEntity2 = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [material])
+                entity.addChild(modelEntity2)
+                modelEntity2.position = SIMD3(x: 2, y: 1, z: -2)
+                
             } catch {
                 print(error)
             }
@@ -72,9 +70,28 @@ struct VideoWithMPSImmersiveView: View {
             guard model.inTexture != nil && model.lowLevelTexture != nil else {
                 return
             }
+            SampleCustomCompositor.blurRadius = model.blurRadius
         }
         
         
+    }
+    
+    func createTextureDescriptor(width: Int, height: Int) -> LowLevelTexture.Descriptor {
+        var desc = LowLevelTexture.Descriptor()
+
+        desc.textureType = .type2D
+        desc.arrayLength = 1
+
+        desc.width = width
+        desc.height = height
+        desc.depth = 1
+
+        desc.mipmapLevelCount = 1
+        desc.pixelFormat = .bgra8Unorm
+        desc.textureUsage = [.shaderRead, .shaderWrite]
+        desc.swizzle = .init(red: .red, green: .green, blue: .blue, alpha: .alpha)
+
+        return desc
     }
 }
 #Preview {
@@ -85,7 +102,7 @@ struct VideoWithMPSImmersiveView: View {
 import Foundation
 import AVKit
 import AVFoundation
-import CoreImage
+import MetalPerformanceShaders
 
 enum CustomCompositorError: Int, Error, LocalizedError {
     case ciFilterFailedToProduceOutputImage = -1_000_001
@@ -102,8 +119,9 @@ enum CustomCompositorError: Int, Error, LocalizedError {
 }
 
 class SampleCustomCompositor: NSObject, AVVideoCompositing {
-    private let coreImageContext = CIContext(options: [CIContextOption.cacheIntermediates: false])
-    let ciFilter = CIFilter(name: "CIGaussianBlur")!
+    static var blurRadius: Float = 0
+    static var llt: LowLevelTexture?
+    static var mtlDevice: MTLDevice?
     var sourcePixelBufferAttributes: [String: Any]? = [String(kCVPixelBufferPixelFormatTypeKey): [kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange]]
     var requiredPixelBufferAttributesForRenderContext: [String: Any] =
         [String(kCVPixelBufferPixelFormatTypeKey): [kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange]]
@@ -139,21 +157,42 @@ class SampleCustomCompositor: NSObject, AVVideoCompositing {
         if sourceCount == 1 {
             let sourceID = requiredTrackIDs[0]
             let sourceBuffer = request.sourceFrame(byTrackID: sourceID.value(of: Int32.self)!)!
+            let mtlDevice = MTLCreateSystemDefaultDevice()!
             
-        
-            let sourceCIImage = CIImage(cvPixelBuffer: sourceBuffer)
-            ciFilter.setValue(sourceCIImage, forKey: kCIInputImageKey)
-            ciFilter.setValue(100.0, forKey: kCIInputRadiusKey)
-            if let outputImage = ciFilter.outputImage {
-                let renderDestination = CIRenderDestination(pixelBuffer: outputPixelBuffer)
-                do {
-                    try coreImageContext.startTask(toRender: outputImage, to: renderDestination)
-                } catch {
-                    print("Error starting request: \(error)")
-                }
+            var mtlTextureCache: CVMetalTextureCache? = nil
+            CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, mtlDevice, nil, &mtlTextureCache)
+            
+            let width = CVPixelBufferGetWidth(sourceBuffer)
+            let height = CVPixelBufferGetHeight(sourceBuffer)
+            var cvTexture: CVMetalTexture? = nil
+            CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, mtlTextureCache!, sourceBuffer, nil, MTLPixelFormat.bgra8Unorm, width, height, 0, &cvTexture)
+            
+            let texture = CVMetalTextureGetTexture(cvTexture!)
+            Task{ @MainActor in
+                populateMPS(inTexture: texture!, lowLevelTexture: Self.llt!, device: mtlDevice)
             }
         }
         
         request.finish(withComposedVideoFrame: outputPixelBuffer)
+    }
+    
+    
+    @MainActor func populateMPS(inTexture: MTLTexture, lowLevelTexture: LowLevelTexture, device: MTLDevice) {
+        // Set up the Metal command queue and compute command encoder,
+        // or abort if that fails.
+        guard let commandQueue = device.makeCommandQueue(),
+              let commandBuffer = commandQueue.makeCommandBuffer() else {
+            return
+        }
+        
+        // Create a MPS filter.
+        let blur = MPSImageGaussianBlur(device: device, sigma: 40)
+        // set input output
+        let outTexture = lowLevelTexture.replace(using: commandBuffer)
+        blur.encode(commandBuffer: commandBuffer, sourceTexture: inTexture, destinationTexture: outTexture)
+        
+        // The usual Metal enqueue process.
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
     }
 }

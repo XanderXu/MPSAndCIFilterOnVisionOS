@@ -37,6 +37,7 @@ class AppModel {
 enum Module: String, Identifiable, CaseIterable, Equatable {
     case imageWithMPS
     case imageWithCIFilter
+    case videoWithMPS
     case videoWithCIFilter
     
     var id: Self { self }

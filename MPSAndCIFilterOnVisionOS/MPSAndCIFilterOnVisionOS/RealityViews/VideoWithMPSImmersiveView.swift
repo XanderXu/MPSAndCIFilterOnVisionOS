@@ -87,7 +87,7 @@ struct VideoWithMPSImmersiveView: View {
         desc.depth = 1
 
         desc.mipmapLevelCount = 1
-        desc.pixelFormat = .bgra8Unorm
+        desc.pixelFormat = .rg8Unorm
         desc.textureUsage = [.shaderRead, .shaderWrite]
         desc.swizzle = .init(red: .red, green: .green, blue: .blue, alpha: .alpha)
 
@@ -157,20 +157,29 @@ class SampleCustomCompositor: NSObject, AVVideoCompositing {
         if sourceCount == 1 {
             let sourceID = requiredTrackIDs[0]
             let sourceBuffer = request.sourceFrame(byTrackID: sourceID.value(of: Int32.self)!)!
+            
             let mtlDevice = MTLCreateSystemDefaultDevice()!
             
             var mtlTextureCache: CVMetalTextureCache? = nil
             CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, mtlDevice, nil, &mtlTextureCache)
             
-            let width = CVPixelBufferGetWidth(sourceBuffer)
-            let height = CVPixelBufferGetHeight(sourceBuffer)
+            let width = CVPixelBufferGetWidthOfPlane(sourceBuffer, 0)
+            let height = CVPixelBufferGetHeightOfPlane(sourceBuffer, 0)
+            
+            let width1 = CVPixelBufferGetWidthOfPlane(sourceBuffer, 1)
+            let height1 = CVPixelBufferGetHeightOfPlane(sourceBuffer, 1)
             var cvTexture: CVMetalTexture? = nil
-            CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, mtlTextureCache!, sourceBuffer, nil, MTLPixelFormat.bgra8Unorm, width, height, 0, &cvTexture)
+            var cvTexture1: CVMetalTexture? = nil
+            let r = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, mtlTextureCache!, sourceBuffer, nil, MTLPixelFormat.rg8Unorm, width, height, 0, &cvTexture)
+            let r1 = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, mtlTextureCache!, sourceBuffer, nil, MTLPixelFormat.r8Unorm, width1, height1, 1, &cvTexture1)
             
             let texture = CVMetalTextureGetTexture(cvTexture!)
+            let texture1 = CVMetalTextureGetTexture(cvTexture1!)
             Task{ @MainActor in
                 populateMPS(inTexture: texture!, lowLevelTexture: Self.llt!, device: mtlDevice)
             }
+            
+            request.finish(withComposedVideoFrame: sourceBuffer)
         }
         
         request.finish(withComposedVideoFrame: outputPixelBuffer)
@@ -186,7 +195,7 @@ class SampleCustomCompositor: NSObject, AVVideoCompositing {
         }
         
         // Create a MPS filter.
-        let blur = MPSImageGaussianBlur(device: device, sigma: 40)
+        let blur = MPSImageGaussianBlur(device: device, sigma: 1)
         // set input output
         let outTexture = lowLevelTexture.replace(using: commandBuffer)
         blur.encode(commandBuffer: commandBuffer, sourceTexture: inTexture, destinationTexture: outTexture)

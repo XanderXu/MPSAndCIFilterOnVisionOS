@@ -11,7 +11,7 @@ import MetalKit
 
 struct ImageWithCIFilterImmersiveView: View {
     @Environment(AppModel.self) private var model
-    let device = MTLCreateSystemDefaultDevice()!
+    let mtlDevice = MTLCreateSystemDefaultDevice()!
     var body: some View {
         RealityView { content in
             
@@ -21,7 +21,7 @@ struct ImageWithCIFilterImmersiveView: View {
             content.add(entity)
             
             do {
-                let textureLoader = MTKTextureLoader(device: device)
+                let textureLoader = MTKTextureLoader(device: mtlDevice)
                 let inTexture = try textureLoader.newTexture(name: "Shop_L", scaleFactor: 1, bundle: nil)
                 
                 // Create a descriptor for the LowLevelTexture.
@@ -29,13 +29,12 @@ struct ImageWithCIFilterImmersiveView: View {
                 // Create the LowLevelTexture and populate it on the GPU.
                 let llt = try LowLevelTexture(descriptor: textureDescriptor)
                 
-                populateCIFilter(inTexture: inTexture, lowLevelTexture: llt, device: device)
+                populateCIFilter(inTexture: inTexture, lowLevelTexture: llt, device: mtlDevice)
 
                 // Create a TextureResource from the LowLevelTexture.
                 let resource = try TextureResource(from: llt)
                 // Create a material that uses the texture.
                 var material = UnlitMaterial(texture: resource)
-                material.opacityThreshold = 0.5
 
                 // Return an entity of a plane which uses the generated texture.
                 let modelEntity = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [material])
@@ -53,7 +52,7 @@ struct ImageWithCIFilterImmersiveView: View {
             guard model.inTexture != nil && model.lowLevelTexture != nil else {
                 return
             }
-            populateCIFilter(inTexture: model.inTexture!, lowLevelTexture: model.lowLevelTexture!, device: device)
+            populateCIFilter(inTexture: model.inTexture!, lowLevelTexture: model.lowLevelTexture!, device: mtlDevice)
         }
         
         

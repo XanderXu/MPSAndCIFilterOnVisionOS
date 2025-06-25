@@ -14,6 +14,7 @@ struct VideoWithCIFilterImmersiveView: View {
     @Environment(AppModel.self) private var model
     let asset = AVURLAsset(url: Bundle.main.url(forResource: "HDRMovie", withExtension: "mov")!)
     let ciFilter = CIFilter(name: "CIGaussianBlur")
+    let ciContext = CIContext(options: [.cacheIntermediates: false, .workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!])
     var body: some View {
         RealityView { content in
             
@@ -48,10 +49,9 @@ struct VideoWithCIFilterImmersiveView: View {
         
         ciFilter?.setValue(source, forKey: kCIInputImageKey)
         ciFilter?.setValue(model.blurRadius, forKey: kCIInputRadiusKey)
-//        ciFilter?.setValue(100.0, forKey: kCIInputRadiusKey)
 
         if let output = ciFilter?.outputImage {
-            request.finish(with: output, context: nil)
+            request.finish(with: output, context: ciContext)
         } else {
             request.finish(with: FilterError.failedToProduceOutputImage)
         }

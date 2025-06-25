@@ -12,6 +12,7 @@ import MetalKit
 struct ImageWithCIFilterImmersiveView: View {
     @Environment(AppModel.self) private var model
     let mtlDevice = MTLCreateSystemDefaultDevice()!
+    let blur = CIFilter(name: "CIGaussianBlur")
     var body: some View {
         RealityView { content in
             
@@ -34,7 +35,7 @@ struct ImageWithCIFilterImmersiveView: View {
                 // Create a TextureResource from the LowLevelTexture.
                 let resource = try TextureResource(from: llt)
                 // Create a material that uses the texture.
-                var material = UnlitMaterial(texture: resource)
+                let material = UnlitMaterial(texture: resource)
 
                 // Return an entity of a plane which uses the generated texture.
                 let modelEntity = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [material])
@@ -86,8 +87,7 @@ struct ImageWithCIFilterImmersiveView: View {
             return
         }
         
-        // Create a CIFilter.
-        let blur = CIFilter(name: "CIGaussianBlur")
+        // Set the CIFilter inputs
         blur?.setValue(CIImage(mtlTexture: inTexture), forKey: kCIInputImageKey)
         blur?.setValue(model.blurRadius, forKey: kCIInputRadiusKey)
         

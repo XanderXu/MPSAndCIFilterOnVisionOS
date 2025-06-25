@@ -24,12 +24,14 @@ struct VideoWithCIFilterImmersiveView: View {
             content.add(entity)
             
             do {
+                // Create a video composition with CIFilter
                 let playerItem = AVPlayerItem(asset: asset)
                 let composition = try await AVMutableVideoComposition.videoComposition(with: asset) { request in
                     populateCIFilter(request: request)
                 }
                 playerItem.videoComposition = composition
                 
+                // Create a material that uses the VideoMaterial
                 let player = AVPlayer(playerItem: playerItem)
                 let videoMaterial = VideoMaterial(avPlayer: player)
                 let modelEntity = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [videoMaterial])

@@ -25,14 +25,21 @@ struct VideoWithMPSImmersiveView: View {
             
             
             do {
-                
-                // Create a descriptor for the LowLevelTexture.
-                let textureDescriptor = createTextureDescriptor(width: 3840/2, height: 2160/2)
+                // 获取视频的实际尺寸
+                let videoTrack = try await asset.loadTracks(withMediaType: .video).first
+                let naturalSize = try await videoTrack?.load(.naturalSize) ?? CGSize(width: 1920, height: 1080)
+
+                // Create a descriptor for the LowLevelTexture with actual video dimensions
+                let textureDescriptor = createTextureDescriptor(
+                    width: Int(naturalSize.width),
+                    height: Int(naturalSize.height)
+                )
                 // Create the LowLevelTexture and populate it on the GPU.
                 let llt = try LowLevelTexture(descriptor: textureDescriptor)
                 model.lowLevelTexture = llt
                 SampleCustomCompositor.mtlDevice = mtlDevice
                 SampleCustomCompositor.llt = llt
+                SampleCustomCompositor.blurRadius = model.blurRadius
                 
                 let composition = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: asset)
                 composition.customVideoCompositorClass = SampleCustomCompositor.self
@@ -67,7 +74,7 @@ struct VideoWithMPSImmersiveView: View {
             
         }
         .onChange(of: model.blurRadius) { oldValue, newValue in
-            guard model.inTexture != nil && model.lowLevelTexture != nil else {
+            guard model.lowLevelTexture != nil else {
                 return
             }
             SampleCustomCompositor.blurRadius = model.blurRadius
@@ -170,34 +177,76 @@ class SampleCustomCompositor: NSObject, AVVideoCompositing {
             var mtlTextureCache: CVMetalTextureCache? = nil
             CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, mtlDevice, nil, &mtlTextureCache)
             
-            if CVPixelBufferGetPlaneCount(sourceBuffer) == 2 && false {
-                let width = CVPixelBufferGetWidthOfPlane(sourceBuffer, 0)
-                let height = CVPixelBufferGetHeightOfPlane(sourceBuffer, 0)
-                
-                
-                var cvTexture: CVMetalTexture? = nil
-                let r = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, mtlTextureCache!, sourceBuffer, nil, MTLPixelFormat.r8Unorm, width, height, 0, &cvTexture)
-                
-                let width1 = CVPixelBufferGetWidthOfPlane(sourceBuffer, 1)
-                let height1 = CVPixelBufferGetHeightOfPlane(sourceBuffer, 1)
-                var cvTexture1: CVMetalTexture? = nil
-                let r1 = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, mtlTextureCache!, sourceBuffer, nil, MTLPixelFormat.rg8Unorm, width1, height1, 1, &cvTexture1)
-                
-                let texture = CVMetalTextureGetTexture(cvTexture!)
-                Task{ @MainActor in
-                    populateMPS(inTexture: texture!, lowLevelTexture: Self.llt!, device: mtlDevice)
-                }
-            } else {
+            // 处理 YUV 格式的视频帧
+            if CVPixelBufferGetPlaneCount(sourceBuffer) == 2 {
+                // 对于 YUV 格式，我们需要创建一个 BGRA 纹理来进行处理
                 let width = CVPixelBufferGetWidth(sourceBuffer)
                 let height = CVPixelBufferGetHeight(sourceBuffer)
-                
-                
+
+                // 创建一个临时的 BGRA 纹理
+                let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+                    pixelFormat: .bgra8Unorm,
+                    width: width,
+                    height: height,
+                    mipmapped: false
+                )
+                textureDescriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
+
+                guard let tempTexture = mtlDevice.makeTexture(descriptor: textureDescriptor) else {
+                    print("Failed to create temporary texture")
+                    return
+                }
+
+                // 使用 CIFilter 将 YUV 转换为 BGRA
+                let ciImage = CIImage(cvPixelBuffer: sourceBuffer)
+                let ciContext = CIContext(mtlDevice: mtlDevice)
+
+                guard let commandQueue = mtlDevice.makeCommandQueue(),
+                      let commandBuffer = commandQueue.makeCommandBuffer() else {
+                    print("Failed to create command buffer for YUV conversion")
+                    return
+                }
+
+                let destination = CIRenderDestination(mtlTexture: tempTexture, commandBuffer: commandBuffer)
+                do {
+                    try ciContext.startTask(toRender: ciImage, to: destination)
+                    commandBuffer.commit()
+                    commandBuffer.waitUntilCompleted()
+
+                    // 现在使用转换后的 BGRA 纹理进行 MPS 处理
+                    Task { @MainActor in
+                        populateMPS(inTexture: tempTexture, lowLevelTexture: Self.llt!, device: mtlDevice)
+                    }
+                } catch {
+                    print("Failed to convert YUV to BGRA: \(error)")
+                }
+            } else {
+                // 处理 BGRA 格式
+                let width = CVPixelBufferGetWidth(sourceBuffer)
+                let height = CVPixelBufferGetHeight(sourceBuffer)
+
                 var cvTexture: CVMetalTexture? = nil
-                let r = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, mtlTextureCache!, sourceBuffer, nil, MTLPixelFormat.bgra8Unorm, width, height, 0, &cvTexture)
-                
-                let texture = CVMetalTextureGetTexture(cvTexture!)
-                Task{ @MainActor in
-                    populateMPS(inTexture: texture!, lowLevelTexture: Self.llt!, device: mtlDevice)
+                let result = CVMetalTextureCacheCreateTextureFromImage(
+                    kCFAllocatorDefault,
+                    mtlTextureCache!,
+                    sourceBuffer,
+                    nil,
+                    MTLPixelFormat.bgra8Unorm,
+                    width,
+                    height,
+                    0,
+                    &cvTexture
+                )
+
+                guard result == kCVReturnSuccess,
+                      let cvTexture = cvTexture,
+                      let texture = CVMetalTextureGetTexture(cvTexture) else {
+                    print("Failed to create Metal texture from pixel buffer")
+                    return
+                }
+
+                Task { @MainActor in
+                    populateMPS(inTexture: texture, lowLevelTexture: Self.llt!, device: mtlDevice)
                 }
             }
             
@@ -215,13 +264,22 @@ class SampleCustomCompositor: NSObject, AVVideoCompositing {
               let commandBuffer = commandQueue.makeCommandBuffer() else {
             return
         }
-        
-        // Create a MPS filter.
-        let blur = MPSImageGaussianBlur(device: device, sigma: 1)
+
+        // Create a MPS filter with dynamic blur radius
+        let blurRadius = max(0.1, Self.blurRadius) // 确保模糊半径至少为 0.1
+        let blur = MPSImageGaussianBlur(device: device, sigma: blurRadius)
+
+        // 检查输入和输出纹理的兼容性
+        guard inTexture.width <= lowLevelTexture.descriptor.width,
+              inTexture.height <= lowLevelTexture.descriptor.height else {
+            print("Texture size mismatch: input(\(inTexture.width)x\(inTexture.height)) vs output(\(lowLevelTexture.descriptor.width)x\(lowLevelTexture.descriptor.height))")
+            return
+        }
+
         // set input output
         let outTexture = lowLevelTexture.replace(using: commandBuffer)
         blur.encode(commandBuffer: commandBuffer, sourceTexture: inTexture, destinationTexture: outTexture)
-        
+
         // The usual Metal enqueue process.
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()

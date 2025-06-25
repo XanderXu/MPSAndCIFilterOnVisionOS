@@ -27,7 +27,7 @@ struct VideoWithMPSImmersiveView: View {
             do {
                 
                 // Create a descriptor for the LowLevelTexture.
-                let textureDescriptor = createTextureDescriptor(width: 3840, height: 2160)
+                let textureDescriptor = createTextureDescriptor(width: 3840/2, height: 2160/2)
                 // Create the LowLevelTexture and populate it on the GPU.
                 let llt = try LowLevelTexture(descriptor: textureDescriptor)
                 model.lowLevelTexture = llt
@@ -58,7 +58,7 @@ struct VideoWithMPSImmersiveView: View {
                 // Return an entity of a plane which uses the generated texture.
                 let modelEntity2 = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [material])
                 entity.addChild(modelEntity2)
-                modelEntity2.position = SIMD3(x: 2, y: 1, z: -2)
+                modelEntity2.position = SIMD3(x: 1.2, y: 1, z: -2)
                 
             } catch {
                 print(error)
@@ -87,7 +87,7 @@ struct VideoWithMPSImmersiveView: View {
         desc.depth = 1
 
         desc.mipmapLevelCount = 1
-        desc.pixelFormat = .rg8Unorm
+        desc.pixelFormat = .bgra8Unorm
         desc.textureUsage = [.shaderRead, .shaderWrite]
         desc.swizzle = .init(red: .red, green: .green, blue: .blue, alpha: .alpha)
 
@@ -123,14 +123,21 @@ class SampleCustomCompositor: NSObject, AVVideoCompositing {
     static var llt: LowLevelTexture?
     static var mtlDevice: MTLDevice?
     var sourcePixelBufferAttributes: [String: Any]? = [String(kCVPixelBufferPixelFormatTypeKey): [kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange]]
-    var requiredPixelBufferAttributesForRenderContext: [String: Any] =
-        [String(kCVPixelBufferPixelFormatTypeKey): [kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange]]
+//    var sourcePixelBufferAttributes: [String: Any]? = [String(kCVPixelBufferPixelFormatTypeKey): [kCVPixelFormatType_32BGRA]]
+    var requiredPixelBufferAttributesForRenderContext: [String: Any] = {
+        return [
+            String(kCVPixelBufferPixelFormatTypeKey):[kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange],
+//            String(kCVPixelBufferPixelFormatTypeKey):[kCVPixelFormatType_32BGRA],
+            String(kCVPixelBufferMetalCompatibilityKey): true
+        ]
+    }()
     
     var supportsWideColorSourceFrames = true
     
     var supportsHDRSourceFrames = true
     
     func renderContextChanged(_ newRenderContext: AVVideoCompositionRenderContext) {
+        print("renderContextChanged")
         return
     }
     
@@ -163,20 +170,35 @@ class SampleCustomCompositor: NSObject, AVVideoCompositing {
             var mtlTextureCache: CVMetalTextureCache? = nil
             CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, mtlDevice, nil, &mtlTextureCache)
             
-            let width = CVPixelBufferGetWidthOfPlane(sourceBuffer, 0)
-            let height = CVPixelBufferGetHeightOfPlane(sourceBuffer, 0)
-            
-            let width1 = CVPixelBufferGetWidthOfPlane(sourceBuffer, 1)
-            let height1 = CVPixelBufferGetHeightOfPlane(sourceBuffer, 1)
-            var cvTexture: CVMetalTexture? = nil
-            var cvTexture1: CVMetalTexture? = nil
-            let r = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, mtlTextureCache!, sourceBuffer, nil, MTLPixelFormat.rg8Unorm, width, height, 0, &cvTexture)
-            let r1 = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, mtlTextureCache!, sourceBuffer, nil, MTLPixelFormat.r8Unorm, width1, height1, 1, &cvTexture1)
-            
-            let texture = CVMetalTextureGetTexture(cvTexture!)
-            let texture1 = CVMetalTextureGetTexture(cvTexture1!)
-            Task{ @MainActor in
-                populateMPS(inTexture: texture!, lowLevelTexture: Self.llt!, device: mtlDevice)
+            if CVPixelBufferGetPlaneCount(sourceBuffer) == 2 && false {
+                let width = CVPixelBufferGetWidthOfPlane(sourceBuffer, 0)
+                let height = CVPixelBufferGetHeightOfPlane(sourceBuffer, 0)
+                
+                
+                var cvTexture: CVMetalTexture? = nil
+                let r = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, mtlTextureCache!, sourceBuffer, nil, MTLPixelFormat.r8Unorm, width, height, 0, &cvTexture)
+                
+                let width1 = CVPixelBufferGetWidthOfPlane(sourceBuffer, 1)
+                let height1 = CVPixelBufferGetHeightOfPlane(sourceBuffer, 1)
+                var cvTexture1: CVMetalTexture? = nil
+                let r1 = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, mtlTextureCache!, sourceBuffer, nil, MTLPixelFormat.rg8Unorm, width1, height1, 1, &cvTexture1)
+                
+                let texture = CVMetalTextureGetTexture(cvTexture!)
+                Task{ @MainActor in
+                    populateMPS(inTexture: texture!, lowLevelTexture: Self.llt!, device: mtlDevice)
+                }
+            } else {
+                let width = CVPixelBufferGetWidth(sourceBuffer)
+                let height = CVPixelBufferGetHeight(sourceBuffer)
+                
+                
+                var cvTexture: CVMetalTexture? = nil
+                let r = CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, mtlTextureCache!, sourceBuffer, nil, MTLPixelFormat.bgra8Unorm, width, height, 0, &cvTexture)
+                
+                let texture = CVMetalTextureGetTexture(cvTexture!)
+                Task{ @MainActor in
+                    populateMPS(inTexture: texture!, lowLevelTexture: Self.llt!, device: mtlDevice)
+                }
             }
             
             request.finish(withComposedVideoFrame: sourceBuffer)

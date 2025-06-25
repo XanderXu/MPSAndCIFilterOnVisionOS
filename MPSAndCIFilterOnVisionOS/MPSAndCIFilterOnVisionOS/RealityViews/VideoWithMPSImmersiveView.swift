@@ -129,22 +129,21 @@ class SampleCustomCompositor: NSObject, AVVideoCompositing {
     static var blurRadius: Float = 0
     static var llt: LowLevelTexture?
     static var mtlDevice: MTLDevice?
-    var sourcePixelBufferAttributes: [String: Any]? = [
+
+    var sourcePixelBufferAttributes: [String: any Sendable]? = [
         String(kCVPixelBufferPixelFormatTypeKey): [kCVPixelFormatType_32BGRA],
+        String(kCVPixelBufferMetalCompatibilityKey): true // 关键！
+    ]
+    var requiredPixelBufferAttributesForRenderContext: [String: any Sendable] = [
+        String(kCVPixelBufferPixelFormatTypeKey):[kCVPixelFormatType_32BGRA],
         String(kCVPixelBufferMetalCompatibilityKey): true
     ]
-    var requiredPixelBufferAttributesForRenderContext: [String: Any] = {
-        return [
-            String(kCVPixelBufferPixelFormatTypeKey):[kCVPixelFormatType_32BGRA],
-            String(kCVPixelBufferMetalCompatibilityKey): true
-        ]
-    }()
+    
     
     var supportsWideColorSourceFrames = false
     var supportsHDRSourceFrames = false
     
     func renderContextChanged(_ newRenderContext: AVVideoCompositionRenderContext) {
-        print("renderContextChanged")
         return
     }
     
@@ -190,12 +189,10 @@ class SampleCustomCompositor: NSObject, AVVideoCompositing {
               let commandBuffer = commandQueue.makeCommandBuffer() else {
             return
         }
-
-        let mtlDevice = device
         
         // 现在 sourceBuffer 应该已经是 BGRA 格式，直接创建 Metal 纹理
         var mtlTextureCache: CVMetalTextureCache? = nil
-        CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, mtlDevice, nil, &mtlTextureCache)
+        CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, device, nil, &mtlTextureCache)
 
         let width = CVPixelBufferGetWidth(sourceBuffer)
         let height = CVPixelBufferGetHeight(sourceBuffer)

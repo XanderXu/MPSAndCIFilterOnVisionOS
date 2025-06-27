@@ -14,7 +14,7 @@ struct VideoWithCIFilterImmersiveView: View {
     @Environment(AppModel.self) private var model
     let asset = AVURLAsset(url: Bundle.main.url(forResource: "HDRMovie", withExtension: "mov")!)
     let ciFilter = CIFilter(name: "CIGaussianBlur")
-    let ciContext = CIContext(options: [.cacheIntermediates: false, .workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!])
+    let ciContext = CIContext(options: [.cacheIntermediates: false, .workingColorSpace: CGColorSpace.displayP3])
     var body: some View {
         RealityView { content in
             

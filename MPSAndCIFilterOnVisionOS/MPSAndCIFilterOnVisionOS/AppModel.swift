@@ -17,7 +17,6 @@ class AppModel {
     var blurRadius: Float = 10
     var inTexture: MTLTexture?
     var lowLevelTexture: LowLevelTexture?
-    var player: AVPlayer?
     
     func clear() {
         rootEntity?.children.removeAll()
@@ -37,10 +36,10 @@ class AppModel {
 
 /// A description of the modules that the app can present.
 enum Module: String, Identifiable, CaseIterable, Equatable {
-    case imageWithMPS
     case imageWithCIFilter
-    case videoWithMPS
+    case imageWithMPS
     case videoWithCIFilter
+    case videoWithMPS
     
     var id: Self { self }
     var name: LocalizedStringKey {

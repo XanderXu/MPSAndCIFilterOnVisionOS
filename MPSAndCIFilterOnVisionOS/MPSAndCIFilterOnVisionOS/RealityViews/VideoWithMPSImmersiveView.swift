@@ -53,9 +53,7 @@ struct VideoWithMPSImmersiveView: View {
                 let modelEntity = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [videoMaterial])
                 entity.addChild(modelEntity)
                 modelEntity.position = SIMD3(x: 0, y: 1, z: -2)
-                player.play()
-                model.player = player
-                
+                player.play()                
                 
                 // Create a TextureResource from the LowLevelTexture.
                 let resource = try await TextureResource(from: llt)

@@ -11,7 +11,7 @@ import RealityKitContent
 
 struct ContentView: View {
 
-    @State private var selectedModule: Module = .imageWithMPS
+    @State private var selectedModule: Module = .imageWithCIFilter
     
     @Environment(AppModel.self) private var model
     @Environment(\.openImmersiveSpace) var openImmersiveSpace

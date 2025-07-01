@@ -6,13 +6,8 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		6C2594F12E02FB3F003157A0 /* RealityKitContent in Frameworks */ = {isa = PBXBuildFile; productRef = 6C2594F02E02FB3F003157A0 /* RealityKitContent */; };
-/* End PBXBuildFile section */
-
 /* Begin PBXFileReference section */
 		6C2594EB2E02FB3F003157A0 /* MPSAndCIFilterOnVisionOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MPSAndCIFilterOnVisionOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		6C2594EF2E02FB3F003157A0 /* RealityKitContent */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = RealityKitContent; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -41,7 +36,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				6C2594F12E02FB3F003157A0 /* RealityKitContent in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -52,7 +46,6 @@
 			isa = PBXGroup;
 			children = (
 				6C2594ED2E02FB3F003157A0 /* MPSAndCIFilterOnVisionOS */,
-				6C2594EE2E02FB3F003157A0 /* Packages */,
 				6C2594EC2E02FB3F003157A0 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -63,14 +56,6 @@
 				6C2594EB2E02FB3F003157A0 /* MPSAndCIFilterOnVisionOS.app */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		6C2594EE2E02FB3F003157A0 /* Packages */ = {
-			isa = PBXGroup;
-			children = (
-				6C2594EF2E02FB3F003157A0 /* RealityKitContent */,
-			);
-			path = Packages;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */

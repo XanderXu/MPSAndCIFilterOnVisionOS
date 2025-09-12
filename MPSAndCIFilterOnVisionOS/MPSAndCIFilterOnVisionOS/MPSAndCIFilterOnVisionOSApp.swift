@@ -33,16 +33,23 @@ struct MPSAndCIFilterOnVisionOSApp: App {
         }
         .immersionStyle(selection: .constant(.mixed), in: .mixed)
         
+        ImmersiveSpace(id: Module.videoWithCIFilter.immersiveId) {
+            VideoWithCIFilterImmersiveView()
+                .environment(model)
+        }
+        .immersionStyle(selection: .constant(.mixed), in: .mixed)
+        
         ImmersiveSpace(id: Module.videoWithMPS.immersiveId) {
             VideoWithMPSImmersiveView()
                 .environment(model)
         }
         .immersionStyle(selection: .constant(.mixed), in: .mixed)
         
-        ImmersiveSpace(id: Module.videoWithCIFilter.immersiveId) {
-            VideoWithCIFilterImmersiveView()
+        ImmersiveSpace(id: Module.videoWithMPS2.immersiveId) {
+            VideoWithMPSImmersiveView2()
                 .environment(model)
         }
         .immersionStyle(selection: .constant(.mixed), in: .mixed)
+        
      }
 }

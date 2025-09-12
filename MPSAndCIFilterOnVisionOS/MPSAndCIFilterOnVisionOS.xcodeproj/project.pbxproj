@@ -78,7 +78,6 @@
 			);
 			name = MPSAndCIFilterOnVisionOS;
 			packageProductDependencies = (
-				6C2594F02E02FB3F003157A0 /* RealityKitContent */,
 			);
 			productName = MPSAndCIFilterOnVisionOS;
 			productReference = 6C2594EB2E02FB3F003157A0 /* MPSAndCIFilterOnVisionOS.app */;
@@ -334,13 +333,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		6C2594F02E02FB3F003157A0 /* RealityKitContent */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = RealityKitContent;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 6C2594E32E02FB3F003157A0 /* Project object */;
 }

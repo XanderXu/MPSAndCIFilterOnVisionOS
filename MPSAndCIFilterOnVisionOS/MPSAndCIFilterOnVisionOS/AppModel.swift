@@ -17,7 +17,7 @@ class AppModel {
     var blurRadius: Float = 10
     var inTexture: MTLTexture?
     var lowLevelTexture: LowLevelTexture?
-    
+    var videoMaterial: VideoMaterial?
     func clear() {
         rootEntity?.children.removeAll()
         inTexture = nil
@@ -40,6 +40,7 @@ enum Module: String, Identifiable, CaseIterable, Equatable {
     case imageWithMPS
     case videoWithCIFilter
     case videoWithMPS
+    case videoWithMPS2
     
     var id: Self { self }
     var name: LocalizedStringKey {

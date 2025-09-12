@@ -10,6 +10,7 @@ import SwiftUI
 import RealityKit
 import MetalKit
 @preconcurrency import AVFoundation
+import MetalPerformanceShaders
 
 struct VideoWithMPSImmersiveView2: View {
     @Environment(AppModel.self) private var model
@@ -56,21 +57,35 @@ struct VideoWithMPSImmersiveView2: View {
                 let videoMaterial = VideoMaterial(videoRenderer: videoRenderer)
                 let sourceAssetReader = try AVAssetReader(asset: asset)
                 let sourceAssetVideoTrack = videoTrack
-                let sourceAssetAudioTrack = audioTrack
                 
-                let sourceAssetReaderVideoTrackOutput = AVAssetReaderTrackOutput(track: sourceAssetVideoTrack!, outputSettings: nil)
-//                let sourceAssetReaderAudioTrackOutput = AVAssetReaderTrackOutput(track: sourceAssetAudioTrack!, outputSettings: nil)
+                let sourceAssetReaderVideoTrackOutput = AVAssetReaderTrackOutput(track: sourceAssetVideoTrack!, outputSettings: [
+                    kCVPixelBufferPixelFormatTypeKey as String: [kCVPixelFormatType_32BGRA],
+//                    kCVPixelBufferWidthKey as String: Int(naturalSize.width),
+//                    kCVPixelBufferHeightKey as String: Int(naturalSize.height),
+                    kCVPixelBufferMetalCompatibilityKey as String: true
+                ])
                 sourceAssetReader.add(sourceAssetReaderVideoTrackOutput)
-//                sourceAssetReader.add(sourceAssetReaderAudioTrackOutput)
-           
+
                 sourceAssetReader.startReading()
                 
                 // Wait for the video renderer to be ready
-                videoRenderer.requestMediaDataWhenReady(on: DispatchQueue.global()) {
+                videoRenderer.requestMediaDataWhenReady(on: DispatchQueue.main) {
                     while videoRenderer.isReadyForMoreMediaData {
                         if sourceAssetReader.status == .reading {
                             if let sampleBuffer = sourceAssetReaderVideoTrackOutput.copyNextSampleBuffer() {
                                 videoRenderer.enqueue(sampleBuffer)
+                                
+                                // 从 CMSampleBuffer 中获取 CVPixelBuffer，并添加调试信息
+                                if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+                                    print("成功获取到 CVPixelBuffer，尺寸: \(CVPixelBufferGetWidth(pixelBuffer))x\(CVPixelBufferGetHeight(pixelBuffer))")
+                                    populateMPS(sourceBuffer: pixelBuffer, lowLevelTexture: llt, device: mtlDevice)
+                                } else {
+                                    print("警告: 无法从 CMSampleBuffer 获取 CVPixelBuffer")
+                                    if let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) {
+                                        print("SampleBuffer 媒体类型: \(formatDescription.mediaType.rawValue)")
+                                        print("SampleBuffer 子类型: \(formatDescription.mediaSubType.rawValue)")
+                                    }
+                                }
                             } else {
                                 videoRenderer.stopRequestingMediaData()
                                 // Mark reader as finished and restart if needed for looping
@@ -86,16 +101,20 @@ struct VideoWithMPSImmersiveView2: View {
                     }
                 }
            
-//                audioRenderer.requestMediaDataWhenReady(on: DispatchQueue.global()) {
-//                    while audioRenderer.isReadyForMoreMediaData {
-//                        if let sampleBuffer = sourceAssetReaderAudioTrackOutput.copyNextSampleBuffer() {
-//                            audioRenderer.enqueue(sampleBuffer)
-//                        } else {
-//                            audioRenderer.stopRequestingMediaData()
-//                            return
-//                        }
-//                    }
-//                }
+                if let sourceAssetAudioTrack = audioTrack {
+                    let sourceAssetReaderAudioTrackOutput = AVAssetReaderTrackOutput(track: sourceAssetAudioTrack, outputSettings: nil)
+                    sourceAssetReader.add(sourceAssetReaderAudioTrackOutput)
+                    audioRenderer.requestMediaDataWhenReady(on: DispatchQueue.global()) {
+                        while audioRenderer.isReadyForMoreMediaData {
+                            if let sampleBuffer = sourceAssetReaderAudioTrackOutput.copyNextSampleBuffer() {
+                                audioRenderer.enqueue(sampleBuffer)
+                            } else {
+                                audioRenderer.stopRequestingMediaData()
+                                return
+                            }
+                        }
+                    }
+                }
            
                 // Start the playback immediately.
                 synchronizer.setRate(1, time: .zero)
@@ -148,6 +167,90 @@ struct VideoWithMPSImmersiveView2: View {
         desc.swizzle = .init(red: .red, green: .green, blue: .blue, alpha: .alpha)
 
         return desc
+    }
+    
+    // MARK: - Texture Processing
+    
+    func populateMPS(sourceBuffer: CVPixelBuffer, lowLevelTexture: LowLevelTexture, device: MTLDevice) {
+        // Set up the Metal command queue and compute command encoder,
+        // or abort if that fails.
+        guard let commandQueue = device.makeCommandQueue(),
+              let commandBuffer = commandQueue.makeCommandBuffer() else {
+            return
+        }
+        
+        // Now sourceBuffer should already be in BGRA format, create Metal texture directly
+        var mtlTextureCache: CVMetalTextureCache? = nil
+        CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, device, nil, &mtlTextureCache)
+
+        let width = CVPixelBufferGetWidth(sourceBuffer)
+        let height = CVPixelBufferGetHeight(sourceBuffer)
+
+        var cvTexture: CVMetalTexture?
+        let result = CVMetalTextureCacheCreateTextureFromImage(
+            kCFAllocatorDefault,
+            mtlTextureCache!,
+            sourceBuffer,
+            nil,
+            .bgra8Unorm,
+            width,
+            height,
+            0,
+            &cvTexture
+        )
+
+        guard result == kCVReturnSuccess,
+              let cvTexture = cvTexture,
+              let bgraTexture = CVMetalTextureGetTexture(cvTexture) else {
+            print("Failed to create Metal texture from BGRA pixel buffer")
+            print("CVPixelBuffer format: \(CVPixelBufferGetPixelFormatType(sourceBuffer))")
+            print("Expected BGRA format: \(kCVPixelFormatType_32BGRA)")
+            return
+        }
+        // Create a MPS filter with dynamic blur radius
+        let blurRadius = model.blurRadius
+        let blur = MPSImageGaussianBlur(device: device, sigma: blurRadius)
+
+        // Check input and output texture compatibility
+        guard bgraTexture.width <= lowLevelTexture.descriptor.width,
+              bgraTexture.height <= lowLevelTexture.descriptor.height else {
+            print("Texture size mismatch: input(\(bgraTexture.width)x\(bgraTexture.height)) vs output(\(lowLevelTexture.descriptor.width)x\(lowLevelTexture.descriptor.height))")
+            return
+        }
+
+        // set input output
+        let outTexture = lowLevelTexture.replace(using: commandBuffer)
+        blur.encode(commandBuffer: commandBuffer, sourceTexture: bgraTexture, destinationTexture: outTexture)
+
+        // The usual Metal enqueue process.
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+    }
+    
+    
+    
+    // MARK: - Helper Methods
+    
+    /// 创建临时纹理描述符
+    private func createTempTextureDescriptor(from texture: MTLTexture) -> MTLTextureDescriptor {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: texture.pixelFormat,
+            width: texture.width,
+            height: texture.height,
+            mipmapped: false
+        )
+        descriptor.usage = [.shaderRead, .shaderWrite]
+        return descriptor
+    }
+    
+    /// 复制纹理的辅助方法
+    private func copyTexture(from sourceTexture: MTLTexture, to destinationTexture: MTLTexture, commandBuffer: MTLCommandBuffer) {
+        guard let blitEncoder = commandBuffer.makeBlitCommandEncoder() else {
+            print("Failed to create blit encoder")
+            return
+        }
+        blitEncoder.copy(from: sourceTexture, to: destinationTexture)
+        blitEncoder.endEncoding()
     }
 }
 #Preview {

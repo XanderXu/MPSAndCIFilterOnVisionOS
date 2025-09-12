@@ -6,13 +6,12 @@
 //
 
 import Foundation
-import AVFoundation
+@preconcurrency import AVFoundation
 import MetalKit
 import RealityKit
 import MetalPerformanceShaders
 
 /// 视频处理管理器，负责视频播放和 MPS 特效处理
-@MainActor
 class VideoProcessingManager {
     
     // MARK: - Properties
@@ -20,6 +19,11 @@ class VideoProcessingManager {
     private var videoRenderer: AVSampleBufferVideoRenderer?
     private var audioRenderer: AVSampleBufferAudioRenderer?
     private var synchronizer: AVSampleBufferRenderSynchronizer?
+    private var lowLevelTexture: LowLevelTexture?
+    private var reader: AVAssetReader?
+    private var trackOutput: AVAssetReaderTrackOutput?
+    
+    
     private var device: MTLDevice?
     var blurRadius: Float = 10.0
     
@@ -34,7 +38,6 @@ class VideoProcessingManager {
     ///   - asset: 视频资源
     ///   - videoTrack: 视频轨道
     ///   - audioTrack: 音频轨道（可选）
-    ///   - naturalSize: 视频自然尺寸
     ///   - lowLevelTexture: 低级纹理用于 MPS 处理
     ///   - device: Metal 设备
     /// - Returns: VideoMaterial 用于显示
@@ -66,58 +69,23 @@ class VideoProcessingManager {
         self.videoRenderer = videoRenderer
         self.audioRenderer = audioRenderer
         self.synchronizer = synchronizer
+        self.lowLevelTexture = lowLevelTexture
         
-        let reader = try AVAssetReader(asset: asset)
-        let trackOutput = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: [
+        self.reader = try AVAssetReader(asset: asset)
+        self.trackOutput = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
             kCVPixelBufferMetalCompatibilityKey as String: true
         ])
-        reader.add(trackOutput)
+        reader?.add(trackOutput!)
         
-        reader.startReading()
+        reader?.startReading()
         
         // 创建 VideoMaterial
         let videoMaterial = VideoMaterial(videoRenderer: videoRenderer)
         
         // 开始视频帧处理
-        videoRenderer.requestMediaDataWhenReady(on: DispatchQueue.global()) {
-            while videoRenderer.isReadyForMoreMediaData {
-                let isReading = reader.status == .reading
-                guard isReading else {
-                    videoRenderer.stopRequestingMediaData()
-                    print("视频读取完成或遇到错误")
-                    
-                    break
-                }
-                
-                if let sampleBuffer = trackOutput.copyNextSampleBuffer() {
-                    videoRenderer.enqueue(sampleBuffer)
-                    
-                    // 从 CMSampleBuffer 中获取 CVPixelBuffer，在后台线程异步处理MPS
-                    if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
-                        let width = CVPixelBufferGetWidth(pixelBuffer)
-                        let height = CVPixelBufferGetHeight(pixelBuffer)
-                        print("成功获取到 CVPixelBuffer，尺寸: \(width)x\(height)")
-                        Task {@MainActor in
-                            self.processMPSEffect(pixelBuffer: pixelBuffer, lowLevelTexture: lowLevelTexture)
-                            
-                        }
-                        
-                    } else {
-                        print("警告: 无法从 CMSampleBuffer 获取 CVPixelBuffer")
-                        if let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) {
-                            print("SampleBuffer 媒体类型: \(formatDescription.mediaType.rawValue)")
-                            print("SampleBuffer 子类型: \(formatDescription.mediaSubType.rawValue)")
-                        }
-                    }
-                } else {
-                    videoRenderer.stopRequestingMediaData()
-                    print("视频播放完成")
-                    
-                    
-                    break
-                }
-            }
+        videoRenderer.requestMediaDataWhenReady(on: DispatchQueue.global()) { [weak self] in
+            self?.p()
         }
         
         // 设置音频处理（如果有音频轨道）
@@ -130,7 +98,42 @@ class VideoProcessingManager {
         
         return videoMaterial
     }
-    
+    func p() {
+        while videoRenderer?.isReadyForMoreMediaData ?? false {
+            let isReading = reader?.status == .reading
+            guard isReading else {
+                videoRenderer?.stopRequestingMediaData()
+                print("视频读取完成或遇到错误")
+                break
+            }
+            
+            if let sampleBuffer = trackOutput?.copyNextSampleBuffer() {
+                videoRenderer?.enqueue(sampleBuffer)
+                
+                // 从 CMSampleBuffer 中获取 CVPixelBuffer，在后台线程异步处理MPS
+                if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+//                        let width = CVPixelBufferGetWidth(pixelBuffer)
+//                        let height = CVPixelBufferGetHeight(pixelBuffer)
+//                        print("成功获取到 CVPixelBuffer，尺寸: \(width)x\(height)")
+                    Task {@MainActor [weak self] in
+                        guard let self = self else { return }
+                        self.processMPSEffect(pixelBuffer: pixelBuffer, lowLevelTexture: lowLevelTexture!)
+                    }
+                    
+                } else {
+                    print("警告: 无法从 CMSampleBuffer 获取 CVPixelBuffer")
+                    if let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) {
+                        print("SampleBuffer 媒体类型: \(formatDescription.mediaType.rawValue)")
+                        print("SampleBuffer 子类型: \(formatDescription.mediaSubType.rawValue)")
+                    }
+                }
+            } else {
+                videoRenderer?.stopRequestingMediaData()
+                print("视频播放完成")
+                break
+            }
+        }
+    }
     /// 停止视频播放
     func stopPlayback() async {
         synchronizer?.setRate(0, time: .zero)
@@ -224,7 +227,9 @@ class VideoProcessingManager {
         guard let audioRenderer = audioRenderer else { return }
         
         // 注意：音频处理需要单独的 reader，这里先预留接口
-        audioRenderer.requestMediaDataWhenReady(on: DispatchQueue.global()) {
+        let renderer = audioRenderer // 创建局部引用
+        renderer.requestMediaDataWhenReady(on: DispatchQueue.global()) { [weak self] in
+            guard let self = self else { return }
             // 音频处理逻辑可以后续添加
             print("音频处理逻辑待实现")
         }

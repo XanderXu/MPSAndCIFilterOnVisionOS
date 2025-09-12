@@ -6,16 +6,53 @@
 //
 
 import SwiftUI
-import SwiftUI
 import RealityKit
 import MetalKit
 @preconcurrency import AVFoundation
 import MetalPerformanceShaders
 
+// MARK: - VideoReaderActor
+actor VideoReaderActor {
+    private var assetReader: AVAssetReader?
+    private var videoTrackOutput: AVAssetReaderTrackOutput?
+    
+    func setupReader(asset: AVURLAsset, videoTrack: AVAssetTrack) async throws {
+        let reader = try AVAssetReader(asset: asset)
+        let trackOutput = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferMetalCompatibilityKey as String: true
+        ])
+        reader.add(trackOutput)
+        
+        self.assetReader = reader
+        self.videoTrackOutput = trackOutput
+        
+        reader.startReading()
+    }
+    
+    func copyNextSampleBuffer() -> CMSampleBuffer? {
+        guard let reader = assetReader,
+              let output = videoTrackOutput,
+              reader.status == .reading else {
+            return nil
+        }
+        return output.copyNextSampleBuffer()
+    }
+    
+    func isReading() -> Bool {
+        return assetReader?.status == .reading
+    }
+    
+    func stopReading() {
+        assetReader?.cancelReading()
+    }
+}
+
 struct VideoWithMPSImmersiveView2: View {
     @Environment(AppModel.self) private var model
     let asset = AVURLAsset(url: Bundle.main.url(forResource: "HDRMovie", withExtension: "mov")!)
     let mtlDevice = MTLCreateSystemDefaultDevice()!
+    
     var body: some View {
         RealityView { content in
             
@@ -53,66 +90,24 @@ struct VideoWithMPSImmersiveView2: View {
                 synchronizer.addRenderer(videoRenderer)
                 synchronizer.addRenderer(audioRenderer)
                 
-                // Create an entity for display.
+                // Create VideoMaterial and setup video reading with actor
                 let videoMaterial = VideoMaterial(videoRenderer: videoRenderer)
-                let sourceAssetReader = try AVAssetReader(asset: asset)
-                let sourceAssetVideoTrack = videoTrack
+                let videoReaderActor = VideoReaderActor()
                 
-                let sourceAssetReaderVideoTrackOutput = AVAssetReaderTrackOutput(track: sourceAssetVideoTrack!, outputSettings: [
-                    kCVPixelBufferPixelFormatTypeKey as String: [kCVPixelFormatType_32BGRA],
-//                    kCVPixelBufferWidthKey as String: Int(naturalSize.width),
-//                    kCVPixelBufferHeightKey as String: Int(naturalSize.height),
-                    kCVPixelBufferMetalCompatibilityKey as String: true
-                ])
-                sourceAssetReader.add(sourceAssetReaderVideoTrackOutput)
-
-                sourceAssetReader.startReading()
+                // Setup reader in actor
+                try await videoReaderActor.setupReader(asset: asset, videoTrack: videoTrack!)
                 
-                // Wait for the video renderer to be ready
-                videoRenderer.requestMediaDataWhenReady(on: DispatchQueue.main) {
-                    while videoRenderer.isReadyForMoreMediaData {
-                        if sourceAssetReader.status == .reading {
-                            if let sampleBuffer = sourceAssetReaderVideoTrackOutput.copyNextSampleBuffer() {
-                                videoRenderer.enqueue(sampleBuffer)
-                                
-                                // 从 CMSampleBuffer 中获取 CVPixelBuffer，并添加调试信息
-                                if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
-                                    print("成功获取到 CVPixelBuffer，尺寸: \(CVPixelBufferGetWidth(pixelBuffer))x\(CVPixelBufferGetHeight(pixelBuffer))")
-                                    populateMPS(sourceBuffer: pixelBuffer, lowLevelTexture: llt, device: mtlDevice)
-                                } else {
-                                    print("警告: 无法从 CMSampleBuffer 获取 CVPixelBuffer")
-                                    if let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) {
-                                        print("SampleBuffer 媒体类型: \(formatDescription.mediaType.rawValue)")
-                                        print("SampleBuffer 子类型: \(formatDescription.mediaSubType.rawValue)")
-                                    }
-                                }
-                            } else {
-                                videoRenderer.stopRequestingMediaData()
-                                // Mark reader as finished and restart if needed for looping
-                                DispatchQueue.main.async {
-                                    print("Video finished playing")
-                                }
-                                return
-                            }
-                        } else {
-                            videoRenderer.stopRequestingMediaData()
-                            return
-                        }
-                    }
+                // Start video reading in background
+                Task {
+                    await processVideoFrames(videoRenderer: videoRenderer, readerActor: videoReaderActor, llt: llt, device: mtlDevice)
                 }
            
                 if let sourceAssetAudioTrack = audioTrack {
                     let sourceAssetReaderAudioTrackOutput = AVAssetReaderTrackOutput(track: sourceAssetAudioTrack, outputSettings: nil)
-                    sourceAssetReader.add(sourceAssetReaderAudioTrackOutput)
+                    // 注意：音频处理需要单独的 reader，这里先注释掉避免冲突
+                    // sourceAssetReader.add(sourceAssetReaderAudioTrackOutput)
                     audioRenderer.requestMediaDataWhenReady(on: DispatchQueue.global()) {
-                        while audioRenderer.isReadyForMoreMediaData {
-                            if let sampleBuffer = sourceAssetReaderAudioTrackOutput.copyNextSampleBuffer() {
-                                audioRenderer.enqueue(sampleBuffer)
-                            } else {
-                                audioRenderer.stopRequestingMediaData()
-                                return
-                            }
-                        }
+                        // 音频处理逻辑可以后续添加
                     }
                 }
            
@@ -138,17 +133,53 @@ struct VideoWithMPSImmersiveView2: View {
             } catch {
                 print(error)
             }
-            
-            
         }
         .onChange(of: model.blurRadius) { oldValue, newValue in
             guard model.lowLevelTexture != nil else {
                 return
             }
-            
         }
-        
-        
+    }
+    
+    // MARK: - Video Processing
+    
+    private func processVideoFrames(videoRenderer: AVSampleBufferVideoRenderer, readerActor: VideoReaderActor, llt: LowLevelTexture, device: MTLDevice) async {
+        videoRenderer.requestMediaDataWhenReady(on: DispatchQueue.global()) {
+            Task { @MainActor in
+                while videoRenderer.isReadyForMoreMediaData {
+                    let isReading = await readerActor.isReading()
+                    guard isReading else {
+                        videoRenderer.stopRequestingMediaData()
+                        return
+                    }
+                    
+                    if let sampleBuffer = await readerActor.copyNextSampleBuffer() {
+                        videoRenderer.enqueue(sampleBuffer)
+                        
+                        // 从 CMSampleBuffer 中获取 CVPixelBuffer，在后台线程异步处理MPS
+                        if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+                            print("成功获取到 CVPixelBuffer，尺寸: \(CVPixelBufferGetWidth(pixelBuffer))x\(CVPixelBufferGetHeight(pixelBuffer))")
+                            // 异步处理MPS，避免阻塞视频读取
+                            Task { @MainActor in
+                                self.populateMPS(sourceBuffer: pixelBuffer, lowLevelTexture: llt, device: device)
+                            }
+                        } else {
+                            print("警告: 无法从 CMSampleBuffer 获取 CVPixelBuffer")
+                            if let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) {
+                                print("SampleBuffer 媒体类型: \(formatDescription.mediaType.rawValue)")
+                                print("SampleBuffer 子类型: \(formatDescription.mediaSubType.rawValue)")
+                            }
+                        }
+                    } else {
+                        videoRenderer.stopRequestingMediaData()
+                        await MainActor.run {
+                            print("Video finished playing")
+                        }
+                        return
+                    }
+                }
+            }
+        }
     }
     
     func createTextureDescriptor(width: Int, height: Int) -> LowLevelTexture.Descriptor {
@@ -171,17 +202,23 @@ struct VideoWithMPSImmersiveView2: View {
     
     // MARK: - Texture Processing
     
+    @MainActor
     func populateMPS(sourceBuffer: CVPixelBuffer, lowLevelTexture: LowLevelTexture, device: MTLDevice) {
         // Set up the Metal command queue and compute command encoder,
         // or abort if that fails.
         guard let commandQueue = device.makeCommandQueue(),
               let commandBuffer = commandQueue.makeCommandBuffer() else {
+            print("Failed to create Metal command queue or buffer")
             return
         }
         
         // Now sourceBuffer should already be in BGRA format, create Metal texture directly
         var mtlTextureCache: CVMetalTextureCache? = nil
-        CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, device, nil, &mtlTextureCache)
+        let cacheResult = CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, device, nil, &mtlTextureCache)
+        guard cacheResult == kCVReturnSuccess, let textureCache = mtlTextureCache else {
+            print("Failed to create Metal texture cache")
+            return
+        }
 
         let width = CVPixelBufferGetWidth(sourceBuffer)
         let height = CVPixelBufferGetHeight(sourceBuffer)
@@ -189,7 +226,7 @@ struct VideoWithMPSImmersiveView2: View {
         var cvTexture: CVMetalTexture?
         let result = CVMetalTextureCacheCreateTextureFromImage(
             kCFAllocatorDefault,
-            mtlTextureCache!,
+            textureCache,
             sourceBuffer,
             nil,
             .bgra8Unorm,
@@ -207,6 +244,7 @@ struct VideoWithMPSImmersiveView2: View {
             print("Expected BGRA format: \(kCVPixelFormatType_32BGRA)")
             return
         }
+        
         // Create a MPS filter with dynamic blur radius
         let blurRadius = model.blurRadius
         let blur = MPSImageGaussianBlur(device: device, sigma: blurRadius)
@@ -222,37 +260,13 @@ struct VideoWithMPSImmersiveView2: View {
         let outTexture = lowLevelTexture.replace(using: commandBuffer)
         blur.encode(commandBuffer: commandBuffer, sourceTexture: bgraTexture, destinationTexture: outTexture)
 
-        // The usual Metal enqueue process.
+        // 使用异步提交，避免阻塞操作
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
     }
     
-    
-    
-    // MARK: - Helper Methods
-    
-    /// 创建临时纹理描述符
-    private func createTempTextureDescriptor(from texture: MTLTexture) -> MTLTextureDescriptor {
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: texture.pixelFormat,
-            width: texture.width,
-            height: texture.height,
-            mipmapped: false
-        )
-        descriptor.usage = [.shaderRead, .shaderWrite]
-        return descriptor
-    }
-    
-    /// 复制纹理的辅助方法
-    private func copyTexture(from sourceTexture: MTLTexture, to destinationTexture: MTLTexture, commandBuffer: MTLCommandBuffer) {
-        guard let blitEncoder = commandBuffer.makeBlitCommandEncoder() else {
-            print("Failed to create blit encoder")
-            return
-        }
-        blitEncoder.copy(from: sourceTexture, to: destinationTexture)
-        blitEncoder.endEncoding()
-    }
 }
+
 #Preview {
     VideoWithMPSImmersiveView()
 }

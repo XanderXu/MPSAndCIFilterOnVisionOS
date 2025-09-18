@@ -25,6 +25,7 @@ final class VideoProcessingManager {
     private var device: MTLDevice?
     
     var blurRadius: Float = 10.0
+    var onTextureUpdated: (() -> Void)?
     
     init() {}
     
@@ -133,7 +134,6 @@ final class VideoProcessingManager {
         self.reader = reader
         self.trackOutput = trackOutput
     }
-    
     @MainActor
     private func processMPSEffect(pixelBuffer: CVPixelBuffer, lowLevelTexture: LowLevelTexture) {
         guard let device = device,
@@ -179,9 +179,12 @@ final class VideoProcessingManager {
         let blur = MPSImageGaussianBlur(device: device, sigma: blurRadius)
         let outTexture = lowLevelTexture.replace(using: commandBuffer)
         blur.encode(commandBuffer: commandBuffer, sourceTexture: bgraTexture, destinationTexture: outTexture)
-        
+
+        // Use async commit to avoid blocking operations
         commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
+        commandBuffer.addCompletedHandler { commandBuffer in
+            self.onTextureUpdated?()
+        }
     }
     
     private func setupAudioProcessing(audioTrack: AVAssetTrack) {

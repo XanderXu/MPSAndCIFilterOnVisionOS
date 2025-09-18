@@ -70,6 +70,8 @@ struct VideoWithMPSImmersiveView: View {
             }
             
             
+        } update: { content in
+            print("update")
         }
         .onChange(of: model.blurRadius) { oldValue, newValue in
             guard model.lowLevelTexture != nil else {

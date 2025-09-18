@@ -14,6 +14,7 @@ import MetalPerformanceShaders
 struct VideoWithMPSImmersiveView2: View {
     @Environment(AppModel.self) private var model
     @State private var videoProcessingManager = VideoProcessingManager()
+    @State private var textureUpdateTrigger = 0
     
     let asset = AVURLAsset(url: Bundle.main.url(forResource: "HDRMovie", withExtension: "mov")!)
     let mtlDevice = MTLCreateSystemDefaultDevice()!
@@ -40,6 +41,11 @@ struct VideoWithMPSImmersiveView2: View {
                 let llt = try LowLevelTexture(descriptor: textureDescriptor)
                 model.lowLevelTexture = llt
                 
+                // Setup texture update callback
+                videoProcessingManager.onTextureUpdated = {
+                    textureUpdateTrigger += 1
+                }
+                
                 // 使用 VideoProcessingManager 设置视频播放（已封装所有渲染器逻辑）
                 let videoMaterial = try videoProcessingManager.setupVideoPlayback(
                     asset: asset,
@@ -65,6 +71,8 @@ struct VideoWithMPSImmersiveView2: View {
             } catch {
                 print(error)
             }
+        } update: { content in
+            print("update")
         }
         .onChange(of: model.blurRadius) { oldValue, newValue in
             guard model.lowLevelTexture != nil else {
@@ -74,10 +82,7 @@ struct VideoWithMPSImmersiveView2: View {
             videoProcessingManager.blurRadius = model.blurRadius
         }
         .onDisappear {
-            // 视图消失时停止播放
-            Task {
-                await videoProcessingManager.stopPlayback()
-            }
+            videoProcessingManager.stopPlayback()
         }
     }
     

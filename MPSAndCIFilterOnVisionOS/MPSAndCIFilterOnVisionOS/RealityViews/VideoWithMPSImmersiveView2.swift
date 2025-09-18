@@ -13,7 +13,7 @@ import MetalPerformanceShaders
 
 struct VideoWithMPSImmersiveView2: View {
     @Environment(AppModel.self) private var model
-    @State private var videoProcessingManager = VideoProcessingManager()
+    private var videoProcessingManager = VideoProcessingManager()
     @State private var textureUpdateTrigger = 0
     
     let asset = AVURLAsset(url: Bundle.main.url(forResource: "HDRMovie", withExtension: "mov")!)
@@ -33,21 +33,20 @@ struct VideoWithMPSImmersiveView2: View {
                 let audioTrack = try await asset.loadTracks(withMediaType: .audio).first
                 let naturalSize = try await videoTrack?.load(.naturalSize) ?? CGSize(width: 1920, height: 1080)
 
-                // 创建 LowLevelTexture 用于 MPS 处理
+                // Create LowLevelTexture for MPS
                 let textureDescriptor = createTextureDescriptor(
                     width: Int(naturalSize.width),
                     height: Int(naturalSize.height)
                 )
                 let llt = try LowLevelTexture(descriptor: textureDescriptor)
-                model.lowLevelTexture = llt
                 
                 // Setup texture update callback
                 videoProcessingManager.onTextureUpdated = {
                     textureUpdateTrigger += 1
                 }
                 
-                // 使用 VideoProcessingManager 设置视频播放（已封装所有渲染器逻辑）
-                let videoMaterial = try videoProcessingManager.setupVideoPlayback(
+                // VideoProcessingManager setup
+                try videoProcessingManager.setupVideoPlayback(
                     asset: asset,
                     videoTrack: videoTrack!,
                     audioTrack: audioTrack,
@@ -55,13 +54,13 @@ struct VideoWithMPSImmersiveView2: View {
                     device: mtlDevice,
                     blurRadius: model.blurRadius
                 )
-
-                // 创建显示平面：使用 VideoMaterial 显示视频
+                
+                let videoMaterial = VideoMaterial(videoRenderer: videoProcessingManager.videoRenderer)
                 let modelEntity = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [videoMaterial])
                 entity.addChild(modelEntity)
                 modelEntity.position = SIMD3(x: 0, y: 1, z: -2)
                               
-                // 创建显示平面：使用 TextureResource 显示 MPS 处理后的结果
+                // Use TextureResource to display MPS output
                 let resource = try await TextureResource(from: llt)
                 let material = UnlitMaterial(texture: resource)
                 let modelEntity2 = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [material])
@@ -75,10 +74,6 @@ struct VideoWithMPSImmersiveView2: View {
             print("update")
         }
         .onChange(of: model.blurRadius) { oldValue, newValue in
-            guard model.lowLevelTexture != nil else {
-                return
-            }
-            // 模糊半径变化时的处理逻辑可以在这里添加
             videoProcessingManager.blurRadius = model.blurRadius
         }
         .onDisappear {

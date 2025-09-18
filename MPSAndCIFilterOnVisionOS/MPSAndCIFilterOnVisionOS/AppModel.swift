@@ -7,9 +7,7 @@
 
 import SwiftUI
 import RealityKit
-import AVFoundation
-/// Maintains app-wide state
-@MainActor
+
 @Observable
 class AppModel {
     var rootEntity: Entity?
@@ -17,7 +15,6 @@ class AppModel {
     var blurRadius: Float = 10
     var inTexture: MTLTexture?
     var lowLevelTexture: LowLevelTexture?
-    var videoMaterial: VideoMaterial?
     func clear() {
         rootEntity?.children.removeAll()
         inTexture = nil

@@ -16,9 +16,9 @@ final class VideoProcessingManager {
     
     // MARK: - Properties
     
-    private var videoRenderer: AVSampleBufferVideoRenderer?
-    private var audioRenderer: AVSampleBufferAudioRenderer?
-    private var synchronizer: AVSampleBufferRenderSynchronizer?
+    private(set) var videoRenderer: AVSampleBufferVideoRenderer!
+    private(set) var audioRenderer: AVSampleBufferAudioRenderer!
+    private var synchronizer: AVSampleBufferRenderSynchronizer!
     private var lowLevelTexture: LowLevelTexture?
     private var reader: AVAssetReader?
     private var trackOutput: AVAssetReaderTrackOutput?
@@ -27,7 +27,11 @@ final class VideoProcessingManager {
     var blurRadius: Float = 10.0
     var onTextureUpdated: (() -> Void)?
     
-    init() {}
+    init() {
+        videoRenderer = AVSampleBufferVideoRenderer()
+        audioRenderer = AVSampleBufferAudioRenderer()
+        synchronizer = AVSampleBufferRenderSynchronizer()
+    }
     
     // MARK: - Public Methods
     
@@ -39,20 +43,20 @@ final class VideoProcessingManager {
         lowLevelTexture: LowLevelTexture,
         device: MTLDevice,
         blurRadius: Float
-    ) throws -> VideoMaterial {
+    ) throws {
         
         self.device = device
         self.blurRadius = blurRadius
         self.lowLevelTexture = lowLevelTexture
         
-        setupRenderers()
+        synchronizer.addRenderer(videoRenderer)
+        synchronizer.addRenderer(audioRenderer)
+        
         try setupReader(asset: asset, videoTrack: videoTrack)
         
         
         videoRenderer?.requestMediaDataWhenReady(on: DispatchQueue.global()) { [weak self] in
-            Task {@MainActor in
-                self?.processVideoFrames()
-            }
+            self?.processVideoFrames()
         }
         
         if let audioTrack = audioTrack {
@@ -60,11 +64,24 @@ final class VideoProcessingManager {
         }
         
         synchronizer?.setRate(1, time: .zero)
-        
-        let videoMaterial = VideoMaterial(videoRenderer: videoRenderer!)
-        return videoMaterial
     }
-    @MainActor
+    
+    // MARK: - Private Methods
+    
+    private func setupReader(asset: AVURLAsset, videoTrack: AVAssetTrack) throws {
+        let reader = try AVAssetReader(asset: asset)
+        let trackOutput = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferMetalCompatibilityKey as String: true
+        ])
+        
+        reader.add(trackOutput)
+        reader.startReading()
+        
+        self.reader = reader
+        self.trackOutput = trackOutput
+    }
+    
     private func processVideoFrames() {
         while videoRenderer?.isReadyForMoreMediaData ?? false {
             guard reader?.status == .reading else {
@@ -83,7 +100,9 @@ final class VideoProcessingManager {
             
             if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
                 guard let lowLevelTexture = self.lowLevelTexture else { return }
-                self.processMPSEffect(pixelBuffer: pixelBuffer, lowLevelTexture: lowLevelTexture)
+                Task {@MainActor in
+                    self.processMPSEffect(pixelBuffer: pixelBuffer, lowLevelTexture: lowLevelTexture)
+                }
             } else {
                 print("Warning: Unable to get CVPixelBuffer from CMSampleBuffer")
                 if let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) {
@@ -107,34 +126,6 @@ final class VideoProcessingManager {
         synchronizer?.setRate(1, time: synchronizer?.currentTime() ?? .zero)
     }
     
-    // MARK: - Private Methods
-    
-    private func setupRenderers() {
-        let videoRenderer = AVSampleBufferVideoRenderer()
-        let audioRenderer = AVSampleBufferAudioRenderer()
-        let synchronizer = AVSampleBufferRenderSynchronizer()
-        
-        synchronizer.addRenderer(videoRenderer)
-        synchronizer.addRenderer(audioRenderer)
-        
-        self.videoRenderer = videoRenderer
-        self.audioRenderer = audioRenderer
-        self.synchronizer = synchronizer
-    }
-    
-    private func setupReader(asset: AVURLAsset, videoTrack: AVAssetTrack) throws {
-        let reader = try AVAssetReader(asset: asset)
-        let trackOutput = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferMetalCompatibilityKey as String: true
-        ])
-        
-        reader.add(trackOutput)
-        reader.startReading()
-        
-        self.reader = reader
-        self.trackOutput = trackOutput
-    }
     @MainActor
     private func processMPSEffect(pixelBuffer: CVPixelBuffer, lowLevelTexture: LowLevelTexture) {
         guard let device = device,

@@ -36,7 +36,6 @@ struct VideoWithMPSImmersiveView: View {
                 )
                 // Create the LowLevelTexture and populate it on the GPU.
                 let llt = try LowLevelTexture(descriptor: textureDescriptor)
-                model.lowLevelTexture = llt
                 SampleCustomCompositor.mtlDevice = mtlDevice
                 SampleCustomCompositor.llt = llt
                 SampleCustomCompositor.blurRadius = model.blurRadius
@@ -74,9 +73,6 @@ struct VideoWithMPSImmersiveView: View {
             print("update")
         }
         .onChange(of: model.blurRadius) { oldValue, newValue in
-            guard model.lowLevelTexture != nil else {
-                return
-            }
             SampleCustomCompositor.blurRadius = model.blurRadius
         }
         

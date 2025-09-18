@@ -70,6 +70,7 @@ final class VideoProcessingManager {
     
     private func setupReader(asset: AVURLAsset, videoTrack: AVAssetTrack) throws {
         let reader = try AVAssetReader(asset: asset)
+        //Can't convert HDR to non-HDR
         let trackOutput = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
             kCVPixelBufferMetalCompatibilityKey as String: true

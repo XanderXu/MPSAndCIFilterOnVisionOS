@@ -66,9 +66,7 @@ struct VideoWithMPSImmersiveView2: View {
                
                 // Setup texture update callback
                 videoProcessingManager.onTextureUpdated = {
-//                    textureUpdateTrigger += 1
-//                    resource.replace(with: llt)
-                    
+                    textureUpdateTrigger += 1                    
                 }
             } catch {
                 print(error)

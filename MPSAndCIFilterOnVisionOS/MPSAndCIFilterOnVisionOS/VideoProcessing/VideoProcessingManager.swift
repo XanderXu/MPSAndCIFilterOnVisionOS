@@ -101,7 +101,7 @@ final class VideoProcessingManager {
             if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
                 guard let lowLevelTexture = self.lowLevelTexture else { return }
                 Task {@MainActor in
-                    self.processMPSEffect(pixelBuffer: pixelBuffer, lowLevelTexture: lowLevelTexture)
+                    self.populateMPS(sourceBuffer: pixelBuffer, lowLevelTexture: lowLevelTexture, device: device!)
                 }
             } else {
                 print("Warning: Unable to get CVPixelBuffer from CMSampleBuffer")
@@ -126,56 +126,60 @@ final class VideoProcessingManager {
         synchronizer?.setRate(1, time: synchronizer?.currentTime() ?? .zero)
     }
     
-    @MainActor
-    private func processMPSEffect(pixelBuffer: CVPixelBuffer, lowLevelTexture: LowLevelTexture) {
-        guard let device = device,
-              let commandQueue = device.makeCommandQueue(),
+    @MainActor func populateMPS(sourceBuffer: CVPixelBuffer, lowLevelTexture: LowLevelTexture, device: MTLDevice) {
+        
+        // Set up the Metal command queue and compute command encoder,
+        // or abort if that fails.
+        guard let commandQueue = device.makeCommandQueue(),
               let commandBuffer = commandQueue.makeCommandBuffer() else {
-            print("Failed to create Metal command queue or buffer")
             return
         }
         
-        // Create Metal texture cache
-        var mtlTextureCache: CVMetalTextureCache?
-        let cacheResult = CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, device, nil, &mtlTextureCache)
-        guard cacheResult == kCVReturnSuccess, let textureCache = mtlTextureCache else {
-            print("Failed to create Metal texture cache")
-            return
-        }
-        
-        let width = CVPixelBufferGetWidth(pixelBuffer)
-        let height = CVPixelBufferGetHeight(pixelBuffer)
-        
-        // Create Metal texture from CVPixelBuffer
+        // Now sourceBuffer should already be in BGRA format, create Metal texture directly
+        var mtlTextureCache: CVMetalTextureCache? = nil
+        CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, device, nil, &mtlTextureCache)
+
+        let width = CVPixelBufferGetWidth(sourceBuffer)
+        let height = CVPixelBufferGetHeight(sourceBuffer)
+
         var cvTexture: CVMetalTexture?
         let result = CVMetalTextureCacheCreateTextureFromImage(
-            kCFAllocatorDefault, textureCache, pixelBuffer, nil,
-            .bgra8Unorm, width, height, 0, &cvTexture
+            kCFAllocatorDefault,
+            mtlTextureCache!,
+            sourceBuffer,
+            nil,
+            .bgra8Unorm,
+            width,
+            height,
+            0,
+            &cvTexture
         )
-        
+
         guard result == kCVReturnSuccess,
               let cvTexture = cvTexture,
               let bgraTexture = CVMetalTextureGetTexture(cvTexture) else {
             print("Failed to create Metal texture from BGRA pixel buffer")
+            print("CVPixelBuffer format: \(CVPixelBufferGetPixelFormatType(sourceBuffer))")
+            print("Expected BGRA format: \(kCVPixelFormatType_32BGRA)")
             return
         }
-        
-        // Validate texture sizes
+        // Create a MPS filter with dynamic blur radius
+        let blurRadius = blurRadius
+        let blur = MPSImageGaussianBlur(device: device, sigma: blurRadius)
+
+        // Check input and output texture compatibility
         guard bgraTexture.width <= lowLevelTexture.descriptor.width,
               bgraTexture.height <= lowLevelTexture.descriptor.height else {
             print("Texture size mismatch: input(\(bgraTexture.width)x\(bgraTexture.height)) vs output(\(lowLevelTexture.descriptor.width)x\(lowLevelTexture.descriptor.height))")
             return
         }
-        
-        // Apply MPS blur effect
-        let blur = MPSImageGaussianBlur(device: device, sigma: blurRadius)
+
+        // set input output
         let outTexture = lowLevelTexture.replace(using: commandBuffer)
         blur.encode(commandBuffer: commandBuffer, sourceTexture: bgraTexture, destinationTexture: outTexture)
 
-        // Use async commit to avoid blocking operations
+        // The usual Metal enqueue process.
         commandBuffer.commit()
-        
-        // Add completion handler to notify texture update
         commandBuffer.waitUntilCompleted()
         self.onTextureUpdated?()
     }

@@ -40,10 +40,7 @@ struct VideoWithMPSImmersiveView2: View {
                 )
                 let llt = try LowLevelTexture(descriptor: textureDescriptor)
                 
-                // Setup texture update callback
-                videoProcessingManager.onTextureUpdated = {
-                    textureUpdateTrigger += 1
-                }
+                
                 
                 // VideoProcessingManager setup
                 try videoProcessingManager.setupVideoPlayback(
@@ -67,6 +64,12 @@ struct VideoWithMPSImmersiveView2: View {
                 entity.addChild(modelEntity2)
                 modelEntity2.position = SIMD3(x: 1.2, y: 1, z: -2)
                
+                // Setup texture update callback
+                videoProcessingManager.onTextureUpdated = {
+//                    textureUpdateTrigger += 1
+//                    resource.replace(with: llt)
+                    
+                }
             } catch {
                 print(error)
             }

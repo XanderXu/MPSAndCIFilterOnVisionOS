@@ -67,7 +67,7 @@ struct VideoWithMPSImmersiveView2: View {
                 let modelEntity2 = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [material])
                 entity.addChild(modelEntity2)
                 modelEntity2.position = SIMD3(x: 1.2, y: 1, z: -2)
-                
+               
             } catch {
                 print(error)
             }

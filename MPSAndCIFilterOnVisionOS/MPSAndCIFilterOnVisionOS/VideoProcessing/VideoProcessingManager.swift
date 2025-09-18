@@ -49,8 +49,10 @@ final class VideoProcessingManager {
         try setupReader(asset: asset, videoTrack: videoTrack)
         
         
-        videoRenderer?.requestMediaDataWhenReady(on: DispatchQueue.main) { [weak self] in
-            self?.processVideoFrames()
+        videoRenderer?.requestMediaDataWhenReady(on: DispatchQueue.global()) { [weak self] in
+            Task {@MainActor in
+                self?.processVideoFrames()
+            }
         }
         
         if let audioTrack = audioTrack {
@@ -62,6 +64,7 @@ final class VideoProcessingManager {
         let videoMaterial = VideoMaterial(videoRenderer: videoRenderer!)
         return videoMaterial
     }
+    @MainActor
     private func processVideoFrames() {
         while videoRenderer?.isReadyForMoreMediaData ?? false {
             guard reader?.status == .reading else {
@@ -79,10 +82,8 @@ final class VideoProcessingManager {
             videoRenderer?.enqueue(sampleBuffer)
             
             if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
-                Task { @MainActor [weak self] in
-                    guard let self = self, let lowLevelTexture = self.lowLevelTexture else { return }
-                    self.processMPSEffect(pixelBuffer: pixelBuffer, lowLevelTexture: lowLevelTexture)
-                }
+                guard let lowLevelTexture = self.lowLevelTexture else { return }
+                self.processMPSEffect(pixelBuffer: pixelBuffer, lowLevelTexture: lowLevelTexture)
             } else {
                 print("Warning: Unable to get CVPixelBuffer from CMSampleBuffer")
                 if let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer) {
@@ -182,9 +183,10 @@ final class VideoProcessingManager {
 
         // Use async commit to avoid blocking operations
         commandBuffer.commit()
-        commandBuffer.addCompletedHandler { commandBuffer in
-            self.onTextureUpdated?()
-        }
+        
+        // Add completion handler to notify texture update
+        commandBuffer.waitUntilCompleted()
+        self.onTextureUpdated?()
     }
     
     private func setupAudioProcessing(audioTrack: AVAssetTrack) {

@@ -51,13 +51,6 @@ struct VideoWithMPSImmersiveView: View {
                 customCompositor?.llt = llt
                 model.customCompositor = customCompositor
                 
-                let player = AVPlayer(playerItem: playerItem)
-                let videoMaterial = VideoMaterial(avPlayer: player)
-                // Return an entity of a plane which uses the VideoMaterial.
-                let modelEntity = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [videoMaterial])
-                entity.addChild(modelEntity)
-                modelEntity.position = SIMD3(x: 0, y: 1, z: -2)
-                player.play()                
                 
                 // Create a TextureResource from the LowLevelTexture.
                 let resource = try await TextureResource(from: llt)
@@ -67,7 +60,16 @@ struct VideoWithMPSImmersiveView: View {
                 // Return an entity of a plane which uses the generated texture.
                 let modelEntity2 = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [material])
                 entity.addChild(modelEntity2)
-                modelEntity2.position = SIMD3(x: 1.2, y: 1, z: -2)
+                modelEntity2.position = SIMD3(x: 0, y: 1, z: -2)
+                
+                
+                let player = AVPlayer(playerItem: playerItem)
+                let videoMaterial = VideoMaterial(avPlayer: player)
+                // Return an entity of a plane which uses the VideoMaterial.
+                let modelEntity = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [videoMaterial])
+                entity.addChild(modelEntity)
+                modelEntity.position = SIMD3(x: 1.2, y: 1, z: -2)
+                player.play()
                 
             } catch {
                 print(error)

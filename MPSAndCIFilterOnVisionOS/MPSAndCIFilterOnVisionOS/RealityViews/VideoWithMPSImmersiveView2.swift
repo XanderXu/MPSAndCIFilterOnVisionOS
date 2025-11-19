@@ -41,7 +41,6 @@ struct VideoWithMPSImmersiveView2: View {
                 let llt = try LowLevelTexture(descriptor: textureDescriptor)
                 
                 
-                
                 // VideoProcessingManager setup
                 try videoProcessingManager.setupVideoPlayback(
                     asset: asset,
@@ -52,17 +51,18 @@ struct VideoWithMPSImmersiveView2: View {
                     blurRadius: model.blurRadius
                 )
                 
-                let videoMaterial = VideoMaterial(videoRenderer: videoProcessingManager.videoRenderer)
-                let modelEntity = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [videoMaterial])
-                entity.addChild(modelEntity)
-                modelEntity.position = SIMD3(x: 0, y: 1, z: -2)
                               
                 // Use TextureResource to display MPS output
                 let resource = try await TextureResource(from: llt)
                 let material = UnlitMaterial(texture: resource)
                 let modelEntity2 = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [material])
                 entity.addChild(modelEntity2)
-                modelEntity2.position = SIMD3(x: 1.2, y: 1, z: -2)
+                modelEntity2.position = SIMD3(x: 0, y: 1, z: -2)
+                
+                let videoMaterial = VideoMaterial(videoRenderer: videoProcessingManager.videoRenderer)
+                let modelEntity = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [videoMaterial])
+                entity.addChild(modelEntity)
+                modelEntity.position = SIMD3(x: 1.2, y: 1, z: -2)
                
                 // Setup texture update callback
                 videoProcessingManager.onTextureUpdated = {

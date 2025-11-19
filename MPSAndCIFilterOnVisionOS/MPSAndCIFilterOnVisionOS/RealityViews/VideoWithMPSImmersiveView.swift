@@ -15,6 +15,7 @@ struct VideoWithMPSImmersiveView: View {
     @Environment(AppModel.self) private var model
     let asset = AVURLAsset(url: Bundle.main.url(forResource: "HDRMovie", withExtension: "mov")!)
     let mtlDevice = MTLCreateSystemDefaultDevice()!
+    
     var body: some View {
         RealityView { content in
             
@@ -34,17 +35,21 @@ struct VideoWithMPSImmersiveView: View {
                     width: Int(naturalSize.width),
                     height: Int(naturalSize.height)
                 )
-                // Create the LowLevelTexture and populate it on the GPU.
-                let llt = try LowLevelTexture(descriptor: textureDescriptor)
-                SampleCustomCompositor.mtlDevice = mtlDevice
-                SampleCustomCompositor.llt = llt
-                SampleCustomCompositor.blurRadius = model.blurRadius
                 
                 // Create a video composition with CustomCompositor
                 let composition = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: asset)
                 composition.customVideoCompositorClass = SampleCustomCompositor.self
                 let playerItem = AVPlayerItem(asset: asset)
                 playerItem.videoComposition = composition
+                
+                // Get the CustomCompositor and set its properties
+                let customCompositor = playerItem.customVideoCompositor as? SampleCustomCompositor
+                customCompositor?.blurRadius = model.blurRadius
+                customCompositor?.mtlDevice = mtlDevice
+                // Create the LowLevelTexture and populate it on the GPU.
+                let llt = try LowLevelTexture(descriptor: textureDescriptor)
+                customCompositor?.llt = llt
+                model.customCompositor = customCompositor
                 
                 let player = AVPlayer(playerItem: playerItem)
                 let videoMaterial = VideoMaterial(avPlayer: player)
@@ -73,7 +78,7 @@ struct VideoWithMPSImmersiveView: View {
             print("update")
         }
         .onChange(of: model.blurRadius) { oldValue, newValue in
-            SampleCustomCompositor.blurRadius = model.blurRadius
+            model.customCompositor?.blurRadius = model.blurRadius
         }
         
         

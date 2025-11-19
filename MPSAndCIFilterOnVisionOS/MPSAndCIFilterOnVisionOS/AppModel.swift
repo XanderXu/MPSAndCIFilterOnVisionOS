@@ -15,10 +15,13 @@ class AppModel {
     var blurRadius: Float = 10
     var inTexture: MTLTexture?
     var lowLevelTexture: LowLevelTexture?
+    var customCompositor: SampleCustomCompositor?
+    
     func clear() {
         rootEntity?.children.removeAll()
         inTexture = nil
         lowLevelTexture = nil
+        customCompositor = nil
     }
     
     /// Resets game state information.

@@ -13,7 +13,7 @@ import MetalPerformanceShaders
 
 struct VideoWithMPSImmersiveView2: View {
     @Environment(AppModel.self) private var model
-    private var videoProcessingManager = VideoProcessingManager()
+    private let videoProcessingManager = VideoProcessingManager()
     @State private var textureUpdateTrigger = 0
     
     let asset = AVURLAsset(url: Bundle.main.url(forResource: "HDRMovie", withExtension: "mov")!)

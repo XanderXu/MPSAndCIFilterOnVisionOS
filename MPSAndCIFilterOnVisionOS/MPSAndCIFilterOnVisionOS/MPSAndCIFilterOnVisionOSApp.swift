@@ -27,6 +27,12 @@ struct MPSAndCIFilterOnVisionOSApp: App {
         }
         .immersionStyle(selection: .constant(.mixed), in: .mixed)
         
+        ImmersiveSpace(id: Module.imageWithCIFilterAndShaderGraph.immersiveId) {
+            ImageWithCIFilterAndShaderGraphImmersiveView()
+                .environment(model)
+        }
+        .immersionStyle(selection: .constant(.mixed), in: .mixed)
+        
         ImmersiveSpace(id: Module.imageWithMPS.immersiveId) {
             ImageWithMPSImmersiveView()
                 .environment(model)
@@ -47,6 +53,12 @@ struct MPSAndCIFilterOnVisionOSApp: App {
         
         ImmersiveSpace(id: Module.videoWithMPS.immersiveId) {
             VideoWithMPSImmersiveView()
+                .environment(model)
+        }
+        .immersionStyle(selection: .constant(.mixed), in: .mixed)
+        
+        ImmersiveSpace(id: Module.videoWithMPSAndShaderGraph.immersiveId) {
+            VideoWithMPSAndShaderGraphImmersiveView()
                 .environment(model)
         }
         .immersionStyle(selection: .constant(.mixed), in: .mixed)

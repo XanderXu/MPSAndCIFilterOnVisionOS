@@ -7,9 +7,7 @@
 
 import SwiftUI
 import RealityKit
-import AVFoundation
-/// Maintains app-wide state
-@MainActor
+
 @Observable
 class AppModel {
     var rootEntity: Entity?
@@ -17,11 +15,13 @@ class AppModel {
     var blurRadius: Float = 10
     var inTexture: MTLTexture?
     var lowLevelTexture: LowLevelTexture?
+    var customCompositor: SampleCustomCompositor?
     
     func clear() {
         rootEntity?.children.removeAll()
         inTexture = nil
         lowLevelTexture = nil
+        customCompositor = nil
     }
     
     /// Resets game state information.
@@ -37,9 +37,13 @@ class AppModel {
 /// A description of the modules that the app can present.
 enum Module: String, Identifiable, CaseIterable, Equatable {
     case imageWithCIFilter
+    case imageWithCIFilterAndShaderGraph
     case imageWithMPS
+    case imageWithMPSAndShaderGraph
     case videoWithCIFilter
     case videoWithMPS
+    case videoWithMPSAndShaderGraph
+    case videoWithMPS2
     
     var id: Self { self }
     var name: LocalizedStringKey {

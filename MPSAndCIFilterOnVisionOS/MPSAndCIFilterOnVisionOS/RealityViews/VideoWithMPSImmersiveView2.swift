@@ -6,13 +6,16 @@
 //
 
 import SwiftUI
-import SwiftUI
 import RealityKit
 import MetalKit
-import AVFoundation
+@preconcurrency import AVFoundation
+import MetalPerformanceShaders
 
-struct VideoWithMPSImmersiveView: View {
+struct VideoWithMPSImmersiveView2: View {
     @Environment(AppModel.self) private var model
+    private let videoProcessingManager = VideoProcessingManager()
+    @State private var textureUpdateTrigger = 0
+    
     let asset = AVURLAsset(url: Bundle.main.url(forResource: "HDRMovie", withExtension: "mov")!)
     let mtlDevice = MTLCreateSystemDefaultDevice()!
     
@@ -24,66 +27,59 @@ struct VideoWithMPSImmersiveView: View {
             model.rootEntity = entity
             content.add(entity)
             
-            
             do {
                 // Get the actual video dimensions
                 let videoTrack = try await asset.loadTracks(withMediaType: .video).first
+                let audioTrack = try await asset.loadTracks(withMediaType: .audio).first
                 let naturalSize = try await videoTrack?.load(.naturalSize) ?? CGSize(width: 1920, height: 1080)
 
-                // Create a descriptor for the LowLevelTexture with actual video dimensions
+                // Create LowLevelTexture for MPS
                 let textureDescriptor = createTextureDescriptor(
                     width: Int(naturalSize.width),
                     height: Int(naturalSize.height)
                 )
-                
-                // Create a video composition with CustomCompositor
-                let composition = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: asset)
-                composition.customVideoCompositorClass = SampleCustomCompositor.self
-                let playerItem = AVPlayerItem(asset: asset)
-                playerItem.videoComposition = composition
-                
-                // Get the CustomCompositor and set its properties
-                let customCompositor = playerItem.customVideoCompositor as? SampleCustomCompositor
-                customCompositor?.blurRadius = model.blurRadius
-                customCompositor?.mtlDevice = mtlDevice
-                // Create the LowLevelTexture and populate it on the GPU.
                 let llt = try LowLevelTexture(descriptor: textureDescriptor)
-                customCompositor?.llt = llt
-                model.customCompositor = customCompositor
                 
                 
-                // Create a TextureResource from the LowLevelTexture.
+                // VideoProcessingManager setup
+                try videoProcessingManager.setupVideoPlayback(
+                    asset: asset,
+                    videoTrack: videoTrack!,
+                    audioTrack: audioTrack,
+                    lowLevelTexture: llt,
+                    device: mtlDevice,
+                    blurRadius: model.blurRadius
+                )
+                
+                              
+                // Use TextureResource to display MPS output
                 let resource = try await TextureResource(from: llt)
-                // Create a material that uses the texture.
                 let material = UnlitMaterial(texture: resource)
-
-                // Return an entity of a plane which uses the generated texture.
                 let modelEntity2 = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [material])
                 entity.addChild(modelEntity2)
                 modelEntity2.position = SIMD3(x: 0, y: 1, z: -2)
                 
-                
-                let player = AVPlayer(playerItem: playerItem)
-                let videoMaterial = VideoMaterial(avPlayer: player)
-                // Return an entity of a plane which uses the VideoMaterial.
+                let videoMaterial = VideoMaterial(videoRenderer: videoProcessingManager.videoRenderer)
                 let modelEntity = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [videoMaterial])
                 entity.addChild(modelEntity)
                 modelEntity.position = SIMD3(x: 1.2, y: 1, z: -2)
-                player.play()
-                
+               
+                // Setup texture update callback
+                videoProcessingManager.onTextureUpdated = {
+                    textureUpdateTrigger += 1                    
+                }
             } catch {
                 print(error)
             }
-            
-            
         } update: { content in
             print("update")
         }
         .onChange(of: model.blurRadius) { oldValue, newValue in
-            model.customCompositor?.blurRadius = model.blurRadius
+            videoProcessingManager.blurRadius = model.blurRadius
         }
-        
-        
+        .onDisappear {
+            videoProcessingManager.stopPlayback()
+        }
     }
     
     func createTextureDescriptor(width: Int, height: Int) -> LowLevelTexture.Descriptor {
@@ -104,7 +100,8 @@ struct VideoWithMPSImmersiveView: View {
         return desc
     }
 }
+
 #Preview {
-    VideoWithMPSImmersiveView()
+    VideoWithMPSImmersiveView2()
 }
 

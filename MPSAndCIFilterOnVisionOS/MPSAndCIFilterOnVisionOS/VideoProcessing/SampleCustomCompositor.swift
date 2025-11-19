@@ -25,9 +25,9 @@ enum CustomCompositorError: Int, Error, LocalizedError {
 }
 
 class SampleCustomCompositor: NSObject, AVVideoCompositing {
-    static var blurRadius: Float = 0
-    static var llt: LowLevelTexture?
-    static var mtlDevice: MTLDevice?
+    var blurRadius: Float = 0
+    var llt: LowLevelTexture?
+    var mtlDevice: MTLDevice?
 
     var sourcePixelBufferAttributes: [String: any Sendable]? = [
         String(kCVPixelBufferPixelFormatTypeKey): [kCVPixelFormatType_32BGRA],
@@ -66,12 +66,12 @@ class SampleCustomCompositor: NSObject, AVVideoCompositing {
             return
         }
         
-        if sourceCount == 1, SampleCustomCompositor.llt != nil, SampleCustomCompositor.mtlDevice != nil {
+        if sourceCount == 1, llt != nil, mtlDevice != nil {
             let sourceID = requiredTrackIDs[0]
             let sourceBuffer = request.sourceFrame(byTrackID: sourceID.value(of: Int32.self)!)!
             
             Task {@MainActor in
-                populateMPS(sourceBuffer: sourceBuffer, lowLevelTexture: SampleCustomCompositor.llt!, device: SampleCustomCompositor.mtlDevice!)
+                populateMPS(sourceBuffer: sourceBuffer, lowLevelTexture: llt!, device: mtlDevice!)
             }
             
             request.finish(withComposedVideoFrame: sourceBuffer)
@@ -118,7 +118,6 @@ class SampleCustomCompositor: NSObject, AVVideoCompositing {
             return
         }
         // Create a MPS filter with dynamic blur radius
-        let blurRadius = Self.blurRadius
         let blur = MPSImageGaussianBlur(device: device, sigma: blurRadius)
 
         // Check input and output texture compatibility

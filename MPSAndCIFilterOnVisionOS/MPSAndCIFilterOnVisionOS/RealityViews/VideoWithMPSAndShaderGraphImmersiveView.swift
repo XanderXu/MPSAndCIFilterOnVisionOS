@@ -1,17 +1,18 @@
 //
-//  VideoWithMPSImmersiveView.swift
+//  VideoWithMPSAndShaderGraphImmersiveView.swift
 //  MPSAndCIFilterOnVisionOS
 //
-//  Created by 许M4 on 2025/6/23.
+//  Created by 许M4 on 2025/11/19.
 //
 
 import SwiftUI
 import SwiftUI
 import RealityKit
+import RealityKitContent
 import MetalKit
 import AVFoundation
 
-struct VideoWithMPSImmersiveView: View {
+struct VideoWithMPSAndShaderGraphImmersiveView: View {
     @Environment(AppModel.self) private var model
     let asset = AVURLAsset(url: Bundle.main.url(forResource: "HDRMovie", withExtension: "mov")!)
     let mtlDevice = MTLCreateSystemDefaultDevice()!
@@ -55,7 +56,8 @@ struct VideoWithMPSImmersiveView: View {
                 // Create a TextureResource from the LowLevelTexture.
                 let resource = try await TextureResource(from: llt)
                 // Create a material that uses the texture.
-                let material = UnlitMaterial(texture: resource)
+                var material = try await ShaderGraphMaterial(named: "/Root/GridMaterial", from: "Materials/GridMaterial.usda", in: realityKitContentBundle)
+                try material.setParameter(name: "BaseImage", value: .textureResource(resource))
 
                 // Return an entity of a plane which uses the generated texture.
                 let modelEntity2 = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [material])
@@ -70,6 +72,7 @@ struct VideoWithMPSImmersiveView: View {
                 entity.addChild(modelEntity)
                 modelEntity.position = SIMD3(x: 1.2, y: 1, z: -2)
                 player.play()
+                
                 
             } catch {
                 print(error)
@@ -105,6 +108,6 @@ struct VideoWithMPSImmersiveView: View {
     }
 }
 #Preview {
-    VideoWithMPSImmersiveView()
+    VideoWithMPSAndShaderGraphImmersiveView()
 }
 

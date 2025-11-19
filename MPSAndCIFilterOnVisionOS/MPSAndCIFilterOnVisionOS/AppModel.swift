@@ -38,6 +38,7 @@ class AppModel {
 enum Module: String, Identifiable, CaseIterable, Equatable {
     case imageWithCIFilter
     case imageWithMPS
+    case imageWithMPSAndShaderGraph
     case videoWithCIFilter
     case videoWithMPS
     case videoWithMPS2

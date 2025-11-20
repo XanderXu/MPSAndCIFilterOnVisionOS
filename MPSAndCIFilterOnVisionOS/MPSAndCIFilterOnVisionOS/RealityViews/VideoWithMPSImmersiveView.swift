@@ -6,8 +6,8 @@
 //
 
 import SwiftUI
-import SwiftUI
 import RealityKit
+import RealityKitContent
 import MetalKit
 import AVFoundation
 
@@ -52,6 +52,13 @@ struct VideoWithMPSImmersiveView: View {
                 model.customCompositor = customCompositor
                 
                 
+                let player = AVPlayer(playerItem: playerItem)
+                let videoMaterial = VideoMaterial(avPlayer: player)
+                // Return an entity of a plane which uses the VideoMaterial.
+                let modelEntity = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [videoMaterial])
+                entity.addChild(modelEntity)
+                modelEntity.position = SIMD3(x: 1.2, y: 1, z: -2)
+                
                 // Create a TextureResource from the LowLevelTexture.
                 let resource = try await TextureResource(from: llt)
                 // Create a material that uses the texture.
@@ -62,13 +69,15 @@ struct VideoWithMPSImmersiveView: View {
                 entity.addChild(modelEntity2)
                 modelEntity2.position = SIMD3(x: 0, y: 1, z: -2)
                 
+                // Create a shader graph material that uses the texture.
+                var shaderGraphMaterial = try await ShaderGraphMaterial(named: "/Root/GridMaterial", from: "Materials/GridMaterial.usda", in: realityKitContentBundle)
+                try shaderGraphMaterial.setParameter(name: "BaseImage", value: .textureResource(resource))
+
+                // Return an entity of a plane which uses the generated texture.
+                let modelEntity3 = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [shaderGraphMaterial])
+                entity.addChild(modelEntity3)
+                modelEntity3.position = SIMD3(x: -1.2, y: 1, z: -2)
                 
-                let player = AVPlayer(playerItem: playerItem)
-                let videoMaterial = VideoMaterial(avPlayer: player)
-                // Return an entity of a plane which uses the VideoMaterial.
-                let modelEntity = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [videoMaterial])
-                entity.addChild(modelEntity)
-                modelEntity.position = SIMD3(x: 1.2, y: 1, z: -2)
                 player.play()
                 
             } catch {

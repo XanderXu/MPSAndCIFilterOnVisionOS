@@ -37,12 +37,9 @@ class AppModel {
 /// A description of the modules that the app can present.
 enum Module: String, Identifiable, CaseIterable, Equatable {
     case imageWithCIFilter
-    case imageWithCIFilterAndShaderGraph
     case imageWithMPS
-    case imageWithMPSAndShaderGraph
     case videoWithCIFilter
     case videoWithMPS
-    case videoWithMPSAndShaderGraph
     case videoWithMPS2
     
     var id: Self { self }

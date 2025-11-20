@@ -7,6 +7,7 @@
 
 import SwiftUI
 import RealityKit
+import RealityKitContent
 import MetalKit
 @preconcurrency import AVFoundation
 import MetalPerformanceShaders
@@ -51,7 +52,12 @@ struct VideoWithMPSImmersiveView2: View {
                     blurRadius: model.blurRadius
                 )
                 
-                              
+                
+                let videoMaterial = VideoMaterial(videoRenderer: videoProcessingManager.videoRenderer)
+                let modelEntity = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [videoMaterial])
+                entity.addChild(modelEntity)
+                modelEntity.position = SIMD3(x: 1.2, y: 1, z: -2)
+                
                 // Use TextureResource to display MPS output
                 let resource = try await TextureResource(from: llt)
                 let material = UnlitMaterial(texture: resource)
@@ -59,10 +65,15 @@ struct VideoWithMPSImmersiveView2: View {
                 entity.addChild(modelEntity2)
                 modelEntity2.position = SIMD3(x: 0, y: 1, z: -2)
                 
-                let videoMaterial = VideoMaterial(videoRenderer: videoProcessingManager.videoRenderer)
-                let modelEntity = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [videoMaterial])
-                entity.addChild(modelEntity)
-                modelEntity.position = SIMD3(x: 1.2, y: 1, z: -2)
+                
+                // Create a shader graph material that uses the texture.
+                var shaderGraphMaterial = try await ShaderGraphMaterial(named: "/Root/GridMaterial", from: "Materials/GridMaterial.usda", in: realityKitContentBundle)
+                try shaderGraphMaterial.setParameter(name: "BaseImage", value: .textureResource(resource))
+
+                // Return an entity of a plane which uses the generated texture.
+                let modelEntity3 = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [shaderGraphMaterial])
+                entity.addChild(modelEntity3)
+                modelEntity3.position = SIMD3(x: -1.2, y: 1, z: -2)
                
                 // Setup texture update callback
                 videoProcessingManager.onTextureUpdated = {

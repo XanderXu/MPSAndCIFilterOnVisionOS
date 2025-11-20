@@ -7,6 +7,7 @@
 
 import SwiftUI
 import RealityKit
+import RealityKitContent
 import MetalPerformanceShaders
 import MetalKit
 
@@ -23,7 +24,7 @@ struct ImageWithMPSImmersiveView: View {
             
             do {
                 let textureLoader = MTKTextureLoader(device: mtlDevice)
-                let inTexture = try textureLoader.newTexture(name: "Shop_L", scaleFactor: 1, bundle: nil)
+                let inTexture = try await textureLoader.newTexture(name: "Shop_L", scaleFactor: 1, bundle: nil)
                 
                 // Create a descriptor for the LowLevelTexture.
                 let textureDescriptor = createTextureDescriptor(width: inTexture.width, height: inTexture.height)
@@ -33,7 +34,7 @@ struct ImageWithMPSImmersiveView: View {
                 populateMPS(inTexture: inTexture, lowLevelTexture: llt, device: mtlDevice)
 
                 // Create a TextureResource from the LowLevelTexture.
-                let resource = try TextureResource(from: llt)
+                let resource = try await TextureResource(from: llt)
                 // Create a material that uses the texture.
                 let material = UnlitMaterial(texture: resource)
 
@@ -41,6 +42,16 @@ struct ImageWithMPSImmersiveView: View {
                 let modelEntity = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [material])
                 entity.addChild(modelEntity)
                 modelEntity.position = SIMD3(x: 0, y: 1, z: -2)
+                
+                
+                // Create a shader graph material that uses the texture.
+                var shaderGraphMaterial = try await ShaderGraphMaterial(named: "/Root/GridMaterial", from: "Materials/GridMaterial.usda", in: realityKitContentBundle)
+                try shaderGraphMaterial.setParameter(name: "BaseImage", value: .textureResource(resource))
+
+                // Return an entity of a plane which uses the generated texture.
+                let modelEntity2 = ModelEntity(mesh: .generatePlane(width: 1, height: 1), materials: [shaderGraphMaterial])
+                entity.addChild(modelEntity2)
+                modelEntity2.position = SIMD3(x: -1.2, y: 1, z: -2)
                 
                 model.inTexture = inTexture
                 model.lowLevelTexture = llt
